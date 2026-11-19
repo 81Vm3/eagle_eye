@@ -45,7 +45,7 @@ class Client:
         self._last = 0.0
 
     def _throttle(self):
-        # 免费档限速 1 次 / 5 秒，所有请求之间统一留间隔
+        # 免费档（未充值的新账号）0.2 QPS = 1 次 / 5 秒，所有请求之间统一留间隔
         delay = self._last + self.interval - time.monotonic()
         if delay > 0:
             time.sleep(delay)

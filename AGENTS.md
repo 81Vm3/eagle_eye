@@ -52,6 +52,12 @@ skills/eagle-search/SKILL.md  Agent Skill 源文件（用户自行安装，仓�
 - **测试 / CI / 联调中绝不跑真实的小红书 `channel search`**（有封号风险）。可以：用 `tests/fixtures/fake_channel.py` 模拟外部渠道；只测 `describe`、`bad_query`（如 `--opt detail=99`，在读配置和拿锁之前就校验）；先 `flock backends/xhs/data/browser.lock sleep N` 占住锁，再验证 `busy`。
 - `make build` / `make test`（额外跑 `backends/xhs` 的 `go test`）委托给 `backends/xhs/Makefile`；Go 1.26 不在 PATH 时自动用 `/usr/local/go/bin/go`（也可 `make GO=...`）。
 
+## X 渠道要点
+
+- 限速：twscrape 按 X 返回的限速头（`x-rate-limit-remaining/reset`）自动锁定并等待，按账号、按接口，15 分钟窗口重置；具体次数以 X 实际返回为准（社区经验约每 15 分钟几十次，未经实测）。twitterapi.io 免费档 0.2 QPS（1 次 / 5 秒，未充值的新账号；充值/老客户更高）。
+- `TWS_INTERVAL=2`、`TWS_WAIT=60`（以及 twitterapi.io 的 `INTERVAL=5.5`）是本项目客户端参数，不是平台限额。
+- 改了 `extensions/x-cookie/` 要 `make sync-extension` 复制到 Windows 副本，再在 Edge 扩展页点「重新加载」。
+
 ## 小红书渠道（xhs）要点
 
 - 构建：顶层 `make build`（或 `cd backends/xhs && make build`）→ `bin/eagle-xhs`。登记：`command = ["bin/eagle-xhs", "channel", "-config", "config.yaml"]`，`cwd = "backends/xhs"`（config.yaml 相对子进程 cwd，无路径转换歧义；配置里的相对路径按配置文件所在目录解析）。

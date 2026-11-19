@@ -47,7 +47,7 @@ DESCRIPTOR = Descriptor(
         'X 高级搜索语法原样透传："精确短语"、A OR B、-排除词、from:用户、to:用户、lang:zh|en|ja、'
         "min_faves:N、min_retweets:N、filter:links、-filter:replies、url:github.com、since:/until:（此时别传 since_hours）"
     ),
-    cost_hint="快：每页约 20 条 ≈ 1 次请求、数秒；每个账号约 50 次搜索 / 15 分钟，超限返回 rate_limited",
+    cost_hint="快：每页约 20 条 ≈ 1 次请求、数秒；twscrape 按 X 返回的限速头按账号/接口自动锁定等待（15 分钟窗口，具体次数以 X 为准）；twitterapi.io 免费档 1 次/5 秒；超限返回 rate_limited",
     options=OPTIONS,
 )
 

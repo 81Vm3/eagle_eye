@@ -35,7 +35,7 @@ eagle search '露营装备' -c x,xhs --opt x.pages=2 --opt xhs.detail=0   # 渠�
 
 | 渠道 | 速度 | 限额 | 典型错误 |
 |---|---|---|---|
-| x | 快，每页约 20 条 ≈ 1 次请求、几秒 | 每个账号约 50 次搜索 / 15 分钟；`pages` × 查询数 + `articles` = 请求数 | `rate_limited`、`auth_required`（cookie 失效） |
+| x | 快，每页约 20 条 ≈ 1 次请求、几秒 | twscrape 按 X 返回的限速头按账号、按接口自动锁定等待，15 分钟窗口重置，具体次数以 X 为准（经验约几十次，未实测）；twitterapi.io 免费档 1 次 / 5 秒；`pages` × 查询数 + `articles` = 请求数 | `rate_limited`、`auth_required`（cookie 失效） |
 | xhs | **慢**，单次 1–3 分钟（真实浏览器、拟人节奏）；`detail` 每多 1 篇约多 20–30 秒 | 渠道不限次数，但**有封号风险**：搜得越多越容易触发风控，触发后熔断冷却（默认 6 小时，连续触发翻倍） | `busy`（`eagle xhs login` 进行中，或另一个小红书搜索正在进行）、`cooldown`（风控熔断）、`unavailable`（没构建 / Chrome 连不上 / 没配 cdp_url）、`auth_required`（登录失效） |
 
 - 小红书的耗时是保守的经验估计，未经实测验证。

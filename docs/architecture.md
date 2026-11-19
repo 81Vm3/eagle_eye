@@ -55,6 +55,9 @@ Agent ──(Skill 指引: skills/eagle-search)──► bin/eagle  (eagle_eye/c
 Item 映射：retweets → reposts，replies → comments，score = 赞 + 2×转推，followers / isReply / article / hits 放 `extra`；
 抓了长文时 `title` = 长文标题。
 
+限速：twscrape 按 X 返回的 `x-rate-limit-remaining/reset` 按账号、按接口自动锁定并等待（15 分钟窗口），具体次数以 X 为准；
+twitterapi.io 免费档 0.2 QPS（未充值的新账号）。`TWS_INTERVAL` / `TWS_WAIT` / `INTERVAL` 是本项目客户端参数，不是平台限额。
+
 ## 小红书渠道
 
 由 `backends/xhs`（Go，ee-xhs 维护）实现协议的 `channel describe|search`；核心通过 `eagle.toml` 登记，不写 Python。
