@@ -13,11 +13,13 @@ import urllib.request
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
+from ... import __version__
 from ...core.models import AUTH_REQUIRED, BAD_QUERY, INTERNAL, RATE_LIMITED, UNAVAILABLE
 
 DEFAULT_TAVILY_BASE_URL = "https://api.tavily.com"
 DEFAULT_ARCTIC_BASE_URL = "https://arctic-shift.photon-reddit.com"
 DEFAULT_TIMEOUT = 20.0
+DEFAULT_USER_AGENT = f"eagle-eye/{__version__}"
 
 
 class RedditProviderError(Exception):
@@ -38,14 +40,16 @@ def redact_secret(message, secret):
 
 
 def _parse_timestamp(value):
-    """把 epoch 秒或 ISO 时间戳解析成 float；解析不了返回 None。"""
+    """把 epoch 秒、毫秒或 ISO 时间戳解析成秒；解析不了返回 None。"""
     text = str(value).strip()
     if not text:
         return None
     try:
-        return float(text)
+        seconds = float(text)
     except ValueError:
-        pass
+        seconds = None
+    if seconds is not None:
+        return seconds / 1000 if seconds > 1e12 else seconds
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
@@ -72,7 +76,7 @@ def _retry_after(headers):
                 except (TypeError, ValueError, OverflowError):
                     pass
         # Arctic Shift 的 X-RateLimit-Reset 是「距重置的秒数」；大于 1e9 时
-        # 按 Unix 时间戳兜底，兼容少数按时间戳返回的后端。
+        # 按 Unix 时间戳兜底（大于 1e12 视为毫秒），兼容少数按时间戳返回的后端。
         reset = headers.get("X-RateLimit-Reset")
         if reset is not None:
             try:
@@ -80,7 +84,9 @@ def _retry_after(headers):
             except (TypeError, ValueError):
                 seconds = None
             if seconds is not None:
-                if seconds > 1e9:
+                if seconds > 1e12:
+                    seconds = seconds / 1000 - now
+                elif seconds > 1e9:
                     seconds -= now
                 return max(1, int(seconds))
         reset_at = headers.get("X-RateLimit-Reset-At")
@@ -91,12 +97,17 @@ def _retry_after(headers):
     return 60
 
 
-def _http_error(err, service, bad_query_statuses=()):
+def _http_error(err, service, bad_query_statuses=(), requires_auth=True):
     status = int(getattr(err, "code", 0) or 0)
     headers = getattr(err, "headers", {}) or {}
     if status in bad_query_statuses:
         raise RedditProviderError(BAD_QUERY, f"{service} HTTP {status}（请求参数不合法）") from None
     if status in (401, 403):
+        if not requires_auth:
+            raise RedditProviderError(
+                UNAVAILABLE,
+                f"{service} 拒绝访问（HTTP {status}，可能被 Cloudflare 拦截或限制）",
+            ) from None
         raise RedditProviderError(AUTH_REQUIRED, f"{service} HTTP {status}（API key 无效或无权访问）") from None
     if status in (402, 429, 432, 433, 434):
         raise RedditProviderError(
@@ -160,6 +171,7 @@ class TavilyProvider:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": DEFAULT_USER_AGENT,
             },
             method="POST",
         )
@@ -207,12 +219,16 @@ class ArcticProvider:
         url = f"{self.base_url}{path}"
         if params:
             url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+        req = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": DEFAULT_USER_AGENT},
+            method="GET",
+        )
         try:
             with self._open(req, timeout=self.timeout if timeout is None else float(timeout)) as response:
                 raw = response.read()
         except urllib.error.HTTPError as e:
-            _http_error(e, "Arctic Shift")
+            _http_error(e, "Arctic Shift", requires_auth=False)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             reason = getattr(e, "reason", e)
             raise RedditProviderError(

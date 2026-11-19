@@ -191,7 +191,8 @@ Reddit 参数：`--opt subreddit=LocalLLaMA`、`--opt author=spez` 走 Arctic Sh
 都在本地过滤/重排；命中缓存时仍按当前时间重新应用 `--hours`。没有结果时返回空 `items` 并在 `meta.notes` 说明。
 Arctic 回退/补全失败的结果会在 `meta.degraded=true` 标记，只缓存短 TTL。没有 Tavily key 时普通查询报 `auth_required`
 （配置 `EAGLE_REDDIT_TAVILY_API_KEY` 或 `$EAGLE_HOME/reddit/config.toml` 的 `api_key`）；Arctic 查询不需要 key。
-Reddit 401/403 报 `auth_required`，429/402/432 报 `rate_limited`（默认 60 秒），连接失败/超时报 `unavailable`，5xx 报 `internal`。
+Tavily 的 401/403 报 `auth_required`，429/402/432 报 `rate_limited`（默认 60 秒）；Arctic Shift 的 401/403 报 `unavailable`
+（它不需要 key，通常是被 Cloudflare 拦截），有 key 时回退 Tavily。连接失败/超时报 `unavailable`，5xx 报 `internal`。
 
 小红书参数：`--opt detail=N`（0–10，默认 3，打开前 N 篇读正文）；`--hours` 有效（发布时间由笔记 ID 推算）；`--sort time|score` 是在综合排序结果内本地重排；关键词没有结果时返回空列表（原因写在 `meta.notes`），不算失败。`cooldown` / `auth_required` 不要自动重试，后者需人工 `eagle xhs login`。
 

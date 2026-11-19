@@ -42,7 +42,7 @@ eagle search '露营装备' -c x,xhs,reddit --opt x.pages=2 --opt xhs.detail=0  
 |---|---|---|---|
 | x | 快，每页约 20 条 ≈ 1 次请求、几秒 | twscrape 按 X 返回的限速头按账号、按接口自动锁定等待，15 分钟窗口重置，具体次数以 X 为准（经验约几十次，未实测）；twitterapi.io 免费档 1 次 / 5 秒；`pages` × 查询数 + `articles` = 请求数 | `rate_limited`、`auth_required`（cookie 失效） |
 | xhs | 快速模式：估计 `detail=0` 约 5–10 秒、`detail=3` 约 10–20 秒（不含 Chrome 冷启动；详情页并行读取） | 渠道不限次数，但**不模拟真人节奏、封号风险较高**：搜得越多越容易触发风控，触发后熔断冷却（默认 6 小时，连续触发翻倍） | `busy`（`eagle xhs login` 进行中，或另一个小红书搜索正在进行）、`cooldown`（风控熔断）、`unavailable`（未安装 / 找不到 Chrome / 专用 profile 被占用）、`auth_required`（登录失效） |
-| reddit | 约 1–3 秒（Tavily/Arctic 网络耗时）；缓存命中不请求 provider | Tavily 免费档约 1,000 信用/月，basic 1 信用/次，最多 20 条；Arctic Shift 免费但无 SLA；本地缓存默认 24 小时（`cache_ttl_hours=0` 关闭） | `auth_required`（缺少/无效 Tavily key）、`rate_limited`（Tavily 429/402/432，默认 60 秒）、`unavailable`（连接失败/超时）、`internal`（5xx） |
+| reddit | 约 1–3 秒（Tavily/Arctic 网络耗时）；缓存命中不请求 provider | Tavily 免费档约 1,000 信用/月，basic 1 信用/次，最多 20 条；Arctic Shift 免费但无 SLA；本地缓存默认 24 小时（`cache_ttl_hours=0` 关闭） | `auth_required`（缺少/无效 Tavily key）、`rate_limited`（Tavily 429/402/432，默认 60 秒）、`unavailable`（连接失败/超时/Arctic 401/403）、`internal`（5xx） |
 
 - 小红书的耗时是估计值，未经实测验证。
 - Reddit：普通全站关键词走 Tavily（`include_domains=["reddit.com"]`），带 `--opt subreddit=...` 或 `--opt author=...`

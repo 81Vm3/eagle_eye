@@ -224,6 +224,36 @@ class RedditAdapterTest(unittest.TestCase):
         self.assertIn("Arctic Shift 失败", result.meta["notes"])
         self.assertIn("回退 Tavily", result.meta["notes"])
 
+    def test_arctic_403_falls_back_to_tavily(self):
+        tavily = FakeTavily([tavily_raw()])
+        arctic = FakeArctic(
+            error=RedditProviderError(UNAVAILABLE, "Arctic Shift 拒绝访问（HTTP 403，可能被 Cloudflare 拦截或限制）")
+        )
+        ch = self.make(tavily=tavily, arctic=arctic)
+        result = ch.search(Query("q", options={"subreddit": "LocalLLaMA"}))
+        self.assertEqual([i.id for i in result.items], ["abc"])
+        self.assertEqual(result.meta["provider"], "tavily")
+        self.assertIn("HTTP 403", result.meta["notes"])
+        self.assertIn("回退 Tavily", result.meta["notes"])
+        self.assertTrue(result.meta["degraded"])
+
+    def test_arctic_403_without_key_preserves_unavailable(self):
+        tavily = FakeTavily([tavily_raw()])
+        arctic = FakeArctic(error=RedditProviderError(UNAVAILABLE, "Arctic Shift 拒绝访问（HTTP 403）"))
+        ch = self.make(tavily=tavily, arctic=arctic, key=None)
+        with self.assertRaises(ChannelError) as cm:
+            ch.search(Query("q", options={"subreddit": "LocalLLaMA"}))
+        self.assertEqual(cm.exception.code, UNAVAILABLE)
+        self.assertIn("HTTP 403", cm.exception.message)
+        self.assertIn("配置 Tavily API key 后可自动回退", cm.exception.message)
+        self.assertEqual(tavily.calls, [])
+
+    def test_tavily_403_remains_auth_required(self):
+        ch = self.make(tavily=FakeTavily(error=RedditProviderError(AUTH_REQUIRED, "Tavily HTTP 403（API key 无效或无权访问）")))
+        with self.assertRaises(ChannelError) as cm:
+            ch.search(Query("q"))
+        self.assertEqual(cm.exception.code, AUTH_REQUIRED)
+
     def test_author_fallback_marks_ignored(self):
         tavily = FakeTavily([tavily_raw()])
         arctic = FakeArctic(error=RedditProviderError(UNAVAILABLE, "offline"))
@@ -318,6 +348,19 @@ class RedditAdapterTest(unittest.TestCase):
         result = ch.search(Query("q"))
         self.assertEqual(len(result.items), 1)
         self.assertIn("Arctic 补全失败", result.meta["notes"])
+        self.assertFalse(result.items[0].extra["enriched"])
+        self.assertTrue(result.meta["degraded"])
+
+    def test_enrich_403_keeps_main_results(self):
+        tavily = FakeTavily([tavily_raw()])
+        arctic = FakeArctic(
+            fetch_error=RedditProviderError(UNAVAILABLE, "Arctic Shift 拒绝访问（HTTP 403，可能被 Cloudflare 拦截或限制）")
+        )
+        ch = self.make(tavily=tavily, arctic=arctic)
+        result = ch.search(Query("q"))
+        self.assertEqual([i.id for i in result.items], ["abc"])
+        self.assertIn("Arctic 补全失败", result.meta["notes"])
+        self.assertIn("HTTP 403", result.meta["notes"])
         self.assertFalse(result.items[0].extra["enriched"])
         self.assertTrue(result.meta["degraded"])
 

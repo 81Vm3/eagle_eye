@@ -24,6 +24,7 @@ from eagle_eye.channels.reddit.providers import (
     _NoRedirectHandler,
     _no_redirect_opener,
 )
+from eagle_eye import __version__
 
 
 class FakeResponse:
@@ -71,6 +72,16 @@ class RedirectingHTTPHandler(urllib.request.HTTPHandler):
 
 
 class TavilyProviderTest(unittest.TestCase):
+    def test_requests_set_eagle_user_agent(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append(req)
+            return FakeResponse({"results": []})
+
+        TavilyProvider("secret", opener=opener).search("q")
+        self.assertEqual(seen[0].get_header("User-agent"), f"eagle-eye/{__version__}")
+
     def test_search_payload(self):
         seen = []
 
@@ -170,15 +181,17 @@ class TavilyProviderTest(unittest.TestCase):
         now = 1_700_000_000.0
         iso_future = datetime.fromtimestamp(now + 60, timezone.utc).isoformat()
         cases = [
-            ({"x_reset_at": int(now) + 45}, 45),
-            ({"x_reset_at": iso_future}, 60),
-            ({"x_reset_at": "1970-01-01T00:00:00Z"}, 1),
-            ({"retry_after": "0"}, 1),
-            ({"x_reset": 0}, 1),
+            ({"x_reset_at": int(now) + 45}, 45, now),
+            ({"x_reset_at": iso_future}, 60, now),
+            ({"x_reset_at": "1970-01-01T00:00:00Z"}, 1, now),
+            # 真实联调值：1795108440000 毫秒 = 1795108440 秒。
+            ({"x_reset_at": 1795108440000}, 40, 1_795_108_400.0),
+            ({"retry_after": "0"}, 1, now),
+            ({"x_reset": 0}, 1, now),
         ]
-        with mock.patch("eagle_eye.channels.reddit.providers.time.time", return_value=now):
-            for headers, expected in cases:
-                with self.subTest(headers=headers):
+        for headers, expected, case_now in cases:
+            with self.subTest(headers=headers):
+                with mock.patch("eagle_eye.channels.reddit.providers.time.time", return_value=case_now):
                     provider = TavilyProvider(
                         "secret",
                         opener=lambda req, timeout=None, headers=headers: (_ for _ in ()).throw(
@@ -274,6 +287,33 @@ class ArcticProviderTest(unittest.TestCase):
         with self.assertRaises(RedditProviderError) as cm:
             ArcticProvider(opener=opener).search("q")
         self.assertEqual(cm.exception.code, INTERNAL)
+
+    def test_requests_set_eagle_user_agent(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append(req)
+            return FakeResponse({"data": []})
+
+        provider = ArcticProvider(opener=opener)
+        provider.search("q")
+        provider.fetch_by_ids(["abc"])
+        self.assertEqual(len(seen), 2)
+        for req in seen:
+            self.assertEqual(req.get_header("User-agent"), f"eagle-eye/{__version__}")
+
+    def test_401_and_403_are_unavailable_not_auth_required(self):
+        for status in (401, 403):
+            with self.subTest(status=status):
+                def opener(req, timeout=None, status=status):
+                    raise http_error(status)
+
+                with self.assertRaises(RedditProviderError) as cm:
+                    ArcticProvider(opener=opener).search("q")
+                self.assertEqual(cm.exception.code, UNAVAILABLE)
+                self.assertIn(f"HTTP {status}", cm.exception.message)
+                self.assertIn("拒绝访问", cm.exception.message)
+                self.assertNotIn("API key", cm.exception.message)
 
 
 if __name__ == "__main__":
