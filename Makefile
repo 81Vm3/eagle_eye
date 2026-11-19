@@ -2,7 +2,7 @@
 #   make venv    用 uv 建 .venv 并装 twscrape（X 渠道 twscrape 后端）
 #   make build   构建小红书外部渠道 → bin/eagle-xhs（委托 backends/xhs/Makefile）
 #   make test    Python 单测 + Go 单测（均不访问网络）
-#   make test-ci 本地复现 CI 的 Python 单测：干净副本 + 新 venv + 空 HOME + env -i
+#   make test-ci 本地复现 CI 的 Python 单测：干净副本 + 新 venv + 空 HOME + env -i，PATH 无/有假 Chrome 等各跑一遍
 #   make sync-extension EXT_DEST=<目录>  把 X cookie 扩展复制到浏览器实际加载的目录（= bin/eagle x extension --copy-to）
 
 PY      ?= python3
@@ -15,6 +15,8 @@ UV      ?= $(shell command -v uv 2>/dev/null || { [ -x $(HOME)/.local/bin/uv ] &
 EXT_DEST ?=
 # test-ci 用的 Python 版本（与 .github/workflows/ci.yml 一致）
 CI_PYTHON ?= 3.11
+# test-ci 第二遍放进 PATH 的假外部程序（模拟 CI runner 自带 Chrome/go/git 等；测试结果不得因此改变）
+CI_FAKE_TOOLS ?= google-chrome google-chrome-stable chromium chromium-browser microsoft-edge go git uv xdg-open open claude twscrape
 
 .DEFAULT_GOAL := help
 .PHONY: help venv build test test-py test-go test-ci sync-extension clean
@@ -37,16 +39,21 @@ test-py: ## Python 单测
 test-go: ## Go 单测（backends/xhs）
 	$(GO_PATH_PREFIX)$(MAKE) -C backends/xhs test GO=$(GO)
 
-test-ci: ## 本地复现 CI：只拷 git 跟踪/未忽略的文件（含未提交改动）到临时目录，新建 Python $(CI_PYTHON) venv，空 HOME + env -i 跑 test-py
+test-ci: ## 本地复现 CI：只拷 git 跟踪/未忽略的文件（含未提交改动）到临时目录，新建 Python $(CI_PYTHON) venv，空 HOME + env -i 跑 test-py；PATH 无/有假 Chrome 等外部程序各一遍
 	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	git ls-files -z -co --exclude-standard | python3 -c 'import os, shutil, sys; d = sys.argv[1]; \
 	[(os.makedirs(os.path.join(d, os.path.dirname(f)), exist_ok=True), shutil.copy2(f, os.path.join(d, f))) \
 	 for f in sys.stdin.read().split("\0") if f and os.path.isfile(f)]' "$$tmp/src"; \
 	$(UV) venv -q -p $(CI_PYTHON) "$$tmp/venv"; \
 	$(UV) pip install -q --python "$$tmp/venv/bin/python" twscrape; \
-	mkdir "$$tmp/home"; \
+	mkdir "$$tmp/home" "$$tmp/fakebin"; \
+	for n in $(CI_FAKE_TOOLS); do printf '#!/bin/sh\nexit 0\n' > "$$tmp/fakebin/$$n"; chmod +x "$$tmp/fakebin/$$n"; done; \
 	echo "test-ci: 源码副本 $$tmp/src，HOME=$$tmp/home" >&2; \
-	cd "$$tmp/src" && env -i HOME="$$tmp/home" PATH="$$tmp/venv/bin:/usr/bin:/bin" LANG=C.UTF-8 make test-py PY=python
+	cd "$$tmp/src"; \
+	echo "test-ci [1/2] PATH 只有 venv + /usr/bin:/bin" >&2; \
+	env -i HOME="$$tmp/home" PATH="$$tmp/venv/bin:/usr/bin:/bin" LANG=C.UTF-8 make test-py PY=python; \
+	echo "test-ci [2/2] PATH 上有假的 $(CI_FAKE_TOOLS)（模拟 CI runner 自带 Chrome 等）" >&2; \
+	env -i HOME="$$tmp/home" PATH="$$tmp/venv/bin:$$tmp/fakebin:/usr/bin:/bin" LANG=C.UTF-8 make test-py PY=python
 
 sync-extension: ## 复制 X cookie 扩展到 EXT_DEST（必填，只覆盖同名文件），之后在浏览器扩展页点「重新加载」
 	@test -n "$(EXT_DEST)" || { echo "用法: make sync-extension EXT_DEST=<浏览器加载的扩展目录>" >&2; exit 2; }
