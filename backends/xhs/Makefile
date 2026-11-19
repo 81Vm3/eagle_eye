@@ -5,6 +5,7 @@
 #   make search Q='Claude Code 教程'   # 一次渠道搜索（真实访问小红书，有封号风险，慎用）
 #   make login                 # 打开浏览器手动扫码登录
 #   make install               # 安装到 ~/.local/bin/eagle-xhs
+#   make dist                  # 交叉编译 5 个 Release 资产 + checksums.txt 到 dist/（与 release.yml 相同）
 
 BINARY  := eagle-xhs
 BIN_DIR := ../../bin
@@ -16,13 +17,31 @@ Q       ?=
 DETAIL  ?= 3
 
 GO      ?= go
-LDFLAGS := -s -w
+GOFMT   ?= $(shell $(GO) env GOROOT)/bin/gofmt
+# 版本号不带 v 前缀（tag v1.2.3 → 1.2.3）；无 git 信息时为 dev。eagle-xhs version 输出它
+VERSION ?= $(patsubst v%,%,$(shell git describe --tags --always --dirty 2>/dev/null || echo dev))
+LDFLAGS := -s -w -X main.version=$(VERSION)
+
+# Release 资产：eagle-xhs-<goos>-<goarch>[.exe]（命名与 eagle setup 的下载约定一致，改动需同步 Python 侧）
+DIST_DIR     := dist
+DIST_TARGETS := darwin-arm64 darwin-amd64 linux-amd64 linux-arm64 windows-amd64
 
 .DEFAULT_GOAL := build
-.PHONY: build install uninstall login describe search test fmt vet check tidy clean config help
+.PHONY: build dist install uninstall login describe search test fmt vet check tidy clean config help
 
 build: ## 编译到 ../../bin/eagle-xhs
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(BINARY) .
+
+dist: ## 交叉编译全部 Release 资产 + checksums.txt 到 dist/（VERSION=1.2.3 可覆盖版本）
+	rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)
+	@set -e; for t in $(DIST_TARGETS); do \
+		os=$${t%-*}; arch=$${t#*-}; ext=; [ "$$os" = windows ] && ext=.exe; \
+		out=$(DIST_DIR)/$(BINARY)-$$os-$$arch$$ext; echo "build $$out"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $$out .; \
+	done
+	cd $(DIST_DIR) && if command -v sha256sum >/dev/null; then sha256sum $(BINARY)-* > checksums.txt; \
+		else shasum -a 256 $(BINARY)-* > checksums.txt; fi
+	@cat $(DIST_DIR)/checksums.txt
 
 install: build ## 安装到 $(PREFIX)/bin
 	install -d $(PREFIX)/bin
@@ -49,7 +68,7 @@ test: ## 单元测试
 	$(GO) test ./...
 
 fmt: ## gofmt 格式化
-	gofmt -w .
+	$(GOFMT) -w .
 
 vet: ## go vet
 	$(GO) vet ./...
@@ -61,6 +80,7 @@ tidy: ## 整理依赖
 
 clean: ## 删除编译产物（不删除 data/）
 	rm -f $(BIN_DIR)/$(BINARY)
+	rm -rf $(DIST_DIR)
 
 help: ## 显示帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'

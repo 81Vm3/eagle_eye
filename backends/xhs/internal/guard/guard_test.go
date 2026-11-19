@@ -53,21 +53,7 @@ func TestEnterCooldownAndCheck(t *testing.T) {
 	}
 }
 
-func TestTimesAndSeconds(t *testing.T) {
-	ctx := context.Background()
-	kv := memKV{}
-	now := time.Date(2026, 11, 19, 23, 59, 30, 500, time.Local)
-	if tm, _ := GetTime(ctx, kv, KeyLastNav); !tm.IsZero() {
-		t.Fatal("空值应为零")
-	}
-	_ = SetTime(ctx, kv, KeyLastNav, now)
-	if tm, _ := GetTime(ctx, kv, KeyLastNav); !tm.Equal(now) {
-		t.Fatalf("roundtrip %v", tm)
-	}
-	kv["legacy"] = now.Format(time.RFC3339) // RFC3339 也能读
-	if tm, _ := GetTime(ctx, kv, "legacy"); tm.IsZero() {
-		t.Fatal("RFC3339 应可解析")
-	}
+func TestSeconds(t *testing.T) {
 	for d, want := range map[time.Duration]int{0: 1, time.Millisecond: 1, time.Second: 1, 1500 * time.Millisecond: 2, 90 * time.Second: 90} {
 		if got := Seconds(d); got != want {
 			t.Errorf("Seconds(%v)=%d want %d", d, got, want)

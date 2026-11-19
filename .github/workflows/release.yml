@@ -1,0 +1,57 @@
+# 推送 tag vX.Y.Z 时交叉编译小红书后端 eagle-xhs，生成 checksums.txt 并上传到 GitHub Release。
+# 资产名 eagle-xhs-<goos>-<goarch>[.exe] 与 eagle setup 的下载约定一致；版本 = tag 去掉 v，须与 pyproject.toml 一致。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  eagle-xhs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验 tag 与 pyproject.toml 版本一致
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ -f pyproject.toml ]; then
+            py=$(sed -n 's/^version *= *"\(.*\)".*/\1/p' pyproject.toml | head -n1)
+            if [ "$py" != "$tag" ]; then
+              echo "::error::tag $GITHUB_REF_NAME 与 pyproject.toml version=$py 不一致"; exit 1
+            fi
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backends/xhs/go.mod
+          cache-dependency-path: backends/xhs/go.sum
+
+      - name: 测试
+        working-directory: backends/xhs
+        run: go vet ./... && go test ./...
+
+      - name: 交叉编译 + checksums.txt
+        working-directory: backends/xhs
+        run: make dist GO=go VERSION="${GITHUB_REF_NAME#v}"
+
+      - name: 校验产物
+        working-directory: backends/xhs/dist
+        run: |
+          sha256sum -c checksums.txt
+          test "$(ls eagle-xhs-* | wc -l)" -eq 5
+          ./eagle-xhs-linux-amd64 version | head -n1 | grep -qx "${GITHUB_REF_NAME#v}"
+
+      - name: 创建 / 更新 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Python 侧的发布步骤可能已经建好同名 Release：存在则只上传（覆盖同名资产）
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" backends/xhs/dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" backends/xhs/dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          fi

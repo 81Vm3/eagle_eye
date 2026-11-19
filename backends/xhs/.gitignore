@@ -4,3 +4,5 @@
 /data/
 # 本机配置（cdp_launch 路径等）
 config.yaml
+# make dist 产物（Release 资产本地验证）
+/dist/

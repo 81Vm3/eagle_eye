@@ -9,12 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Range 闭区间 [Min, Max]，YAML 中写作 [a, b]。
-type Range [2]int
-
-func (r Range) Min() int { return r[0] }
-func (r Range) Max() int { return r[1] }
-
 type Config struct {
 	DBPath   string         `yaml:"db_path"`
 	Browser  BrowserConfig  `yaml:"browser"`
@@ -31,24 +25,23 @@ type BrowserConfig struct {
 	CDPLaunch   []string `yaml:"cdp_launch"`
 	ChromePath  string   `yaml:"chrome_path"`
 	UserDataDir string   `yaml:"user_data_dir"`
-	Headless    bool     `yaml:"headless"`
+	// HeadlessSet 配置文件里写的 headless（nil = 没写）。实际生效的值见 Headless，由 Load 按兼容规则决定。
+	HeadlessSet *bool `yaml:"headless"`
+	// Headless 实际生效的模式（ResolveHeadless）：true 时 channel search 自己用 user_data_dir 启动
+	// --headless=new 的 Chrome，用完关闭，不需要 cdp_url；false 时接管 cdp_url 的 Chrome。login 总是有界面。
+	Headless bool `yaml:"-"`
 	// Silent 静默运行：把有界面的 Chrome 窗口移到屏幕外（不是无头、不是最小化），退出时放回原处
 	Silent bool   `yaml:"silent"`
 	Proxy  string `yaml:"proxy"`
 }
 
-// BehaviorConfig 拟人节奏与风控冷却。
+// BehaviorConfig 风控冷却。
+//
+// 旧版本的拟人节奏字段（read_seconds、action_delay_ms、nav_interval_seconds、nav_per_minute）已删除：
+// channel search 不再模拟真人节奏。旧配置里残留这些字段时静默忽略（yaml 非严格解析）。
 type BehaviorConfig struct {
-	// ReadSeconds 每篇打开的笔记的阅读停留（秒）
-	ReadSeconds Range `yaml:"read_seconds"`
-	// ActionDelayMs 相邻操作之间的停顿（毫秒）
-	ActionDelayMs Range `yaml:"action_delay_ms"`
 	// CooldownHours 触发验证页后的冷却时长（连续触发翻倍，上限 48h）
 	CooldownHours float64 `yaml:"cooldown_hours"`
-	// NavIntervalSeconds 相邻两次页面加载的最小间隔（随机取值范围，秒），跨进程生效
-	NavIntervalSeconds Range `yaml:"nav_interval_seconds"`
-	// NavPerMinute 每分钟最多加载几个页面，-1 = 不限
-	NavPerMinute int `yaml:"nav_per_minute"`
 }
 
 // ChannelConfig eagle_eye 渠道搜索（eagle-xhs channel search）的参数。
@@ -57,6 +50,8 @@ type ChannelConfig struct {
 	TimeoutSeconds int `yaml:"timeout_seconds"`
 	// MaxScrolls 搜索结果页最多向下滚动几次
 	MaxScrolls int `yaml:"max_scrolls"`
+	// DetailConcurrency detail 时最多同时打开几个笔记标签页（1–10，默认 3）
+	DetailConcurrency int `yaml:"detail_concurrency"`
 }
 
 // Load 读取配置文件并补默认值。旧配置里已不再使用的段落会被忽略。
@@ -92,13 +87,15 @@ func (c *Config) LockPath() string {
 	return filepath.Join(filepath.Dir(c.DBPath), "browser.lock")
 }
 
-func setRange(r *Range, a, b int) {
-	if r[0] == 0 && r[1] == 0 {
-		*r = Range{a, b}
+// ResolveHeadless headless 的兼容规则：
+//   - 配置里显式写了 headless：以它为准；
+//   - 没写、但配置了 cdp_url：旧配置（接管已运行 Chrome 的用法），按 false 处理，行为不变；
+//   - 都没写：默认 true（新默认，channel search 不弹窗口）。
+func ResolveHeadless(set *bool, cdpURL string) bool {
+	if set != nil {
+		return *set
 	}
-	if r[1] < r[0] {
-		r[1] = r[0]
-	}
+	return cdpURL == ""
 }
 
 func setInt(v *int, d int) {
@@ -120,16 +117,14 @@ func (c *Config) applyDefaults() {
 	if c.Browser.UserDataDir == "" {
 		c.Browser.UserDataDir = "data/chrome-profile"
 	}
+	c.Browser.Headless = ResolveHeadless(c.Browser.HeadlessSet, c.Browser.CDPURL)
 
-	b := &c.Behavior
-	setRange(&b.ReadSeconds, 5, 15)
-	setRange(&b.ActionDelayMs, 600, 2200)
-	setFloat(&b.CooldownHours, 6)
-	setRange(&b.NavIntervalSeconds, 8, 15)
-	setInt(&b.NavPerMinute, 3)
+	setFloat(&c.Behavior.CooldownHours, 6)
 
 	ch := &c.Channel
-	setInt(&ch.TimeoutSeconds, 600)
+	setInt(&ch.TimeoutSeconds, 120)
 	setInt(&ch.MaxScrolls, 5)
 	ch.MaxScrolls = max(0, min(ch.MaxScrolls, 10))
+	setInt(&ch.DetailConcurrency, 3)
+	ch.DetailConcurrency = max(1, min(ch.DetailConcurrency, 10))
 }

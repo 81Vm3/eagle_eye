@@ -410,3 +410,32 @@ func TestBuildNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowChecks(t *testing.T) {
+	if hide, vis := windowChecks(true, true); hide || vis {
+		t.Fatal("无头：不移窗、不查可见性")
+	}
+	if hide, vis := windowChecks(false, true); !hide || !vis {
+		t.Fatal("有界面 + silent")
+	}
+	if hide, vis := windowChecks(false, false); hide || !vis {
+		t.Fatal("有界面")
+	}
+}
+
+// headless=true 不需要 cdp_url：直接按 user_data_dir 启动无头 Chrome（这里是假的 Open）
+func TestSearchHeadlessNoCDP(t *testing.T) {
+	f := newFixture(t)
+	f.cfg.Browser.CDPURL = ""
+	f.cfg.Browser.Headless = true
+	var got config.BrowserConfig
+	f.r.Open = func(c config.BrowserConfig) (*xhs.Session, error) {
+		f.opened++
+		got = c
+		return nil, xhs.ErrProfileInUse
+	}
+	e := f.search(t)
+	if e.Code != CodeUnavailable || f.opened != 1 || !got.Headless || !strings.Contains(e.Message, "无头") {
+		t.Fatalf("%+v opened=%d", e, f.opened)
+	}
+}

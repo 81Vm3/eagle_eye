@@ -66,7 +66,7 @@ func TestKVAcrossConnections(t *testing.T) {
 			defer wg.Done()
 			err := s.SetKV(ctx, fmt.Sprintf("k%d", i), "v")
 			if err == nil {
-				err = s.SetKV(ctx, "last_nav_at", time.Now().Format(time.RFC3339Nano))
+				err = s.SetKV(ctx, "test_key", time.Now().Format(time.RFC3339Nano))
 			}
 			if err != nil {
 				mu.Lock()

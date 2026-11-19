@@ -1,4 +1,4 @@
-// Package store 基于 SQLite（纯 Go 驱动，无需 cgo）的持久化：kv 状态（冷却、节流时刻等）。
+// Package store 基于 SQLite（纯 Go 驱动，无需 cgo）的持久化：kv 状态（风控冷却等）。
 package store
 
 import (

@@ -15,8 +15,8 @@ import (
 	"eagle-eye/xhs/internal/xhs"
 )
 
-// Runner 执行一次渠道搜索。每次 channel search 都是一个新进程，所以所有防封状态
-// （冷却、页面加载节流时刻、浏览器锁）都从 SQLite / 锁文件里取，跨进程共享。
+// Runner 执行一次渠道搜索。每次 channel search 都是一个新进程，所以风控状态
+// （冷却、浏览器锁）都从 SQLite / 锁文件里取，跨进程共享。
 type Runner struct {
 	Cfg *config.Config
 	DB  *store.Store
@@ -34,7 +34,7 @@ func NewRunner(cfg *config.Config, db *store.Store, log *slog.Logger) *Runner {
 
 func (r *Runner) now() time.Time { return r.Now() }
 
-// bg 写入防封状态用的 ctx：即使搜索被中断/超时，冷却和导航时刻也必须落库。
+// bg 写入风控状态用的 ctx：即使搜索被中断/超时，冷却状态也必须落库。
 func bg(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }
 
 // checkCooldown 冷却期内直接拒绝，不碰浏览器。
@@ -81,18 +81,12 @@ func (r *Runner) fail(ctx context.Context, err error, browserGone func() bool) *
 	return newErr(CodeInternal, "%v", err)
 }
 
-// fatal 打开笔记时必须立刻终止整个搜索的错误。
-func fatal(ctx context.Context, err error) bool {
-	return ctx.Err() != nil || errors.Is(err, xhs.ErrVerification) || errors.Is(err, xhs.ErrLoginRequired) ||
-		errors.Is(err, xhs.ErrBrowserClosed)
-}
-
 // Search 执行一次搜索。返回的 error 总是 *Error。
 func (r *Runner) Search(ctx context.Context, q Query) (*Response, error) {
 	cfg := r.Cfg
-	if cfg.Browser.CDPURL == "" {
-		return nil, newErr(CodeUnavailable, "channel search 只接管已在运行的 Chrome（新开一个标签页工作），"+
-			"请在配置里设置 browser.cdp_url，见 README「接管已有的 Chrome」")
+	if !cfg.Browser.Headless && cfg.Browser.CDPURL == "" {
+		return nil, newErr(CodeUnavailable, "browser.headless=false 时 channel search 只接管已在运行的 Chrome（新开一个标签页工作），"+
+			"请在配置里设置 browser.cdp_url（见 README「接管已有的 Chrome」），或把 browser.headless 设为 true")
 	}
 
 	// 1. 冷却预检（只读，不占锁）：冷却比 busy 更有信息量
@@ -118,89 +112,80 @@ func (r *Runner) Search(ctx context.Context, q Query) (*Response, error) {
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.Channel.TimeoutSeconds)*time.Second)
 	defer cancel()
 
-	// 4. 浏览器：只在 CDP 接管的 Chrome 里新开一个标签页，结束时只关这个标签页
+	// 4. 浏览器：headless 时用专用 profile 启动无头 Chrome、结束时关闭；
+	//    否则只在 CDP 接管的 Chrome 里新开一个标签页，结束时只关这个标签页
 	sess, err := r.Open(cfg.Browser)
 	if err != nil {
+		if cfg.Browser.Headless {
+			return nil, newErr(CodeUnavailable, "启动无头 Chrome 失败（browser.headless=true，profile=%s）: %v", cfg.Browser.UserDataDir, err)
+		}
 		return nil, newErr(CodeUnavailable, "连不上 Chrome（browser.cdp_url=%s）: %v", cfg.Browser.CDPURL, err)
 	}
 	defer sess.Close()
 	gone := func() bool { return !xhs.BrowserAlive(bg(ctx), sess.Browser) }
 
-	// 跨进程节流：接着上一个进程最近一次导航的时刻算 nav_interval_seconds，并把自己的导航时刻写回去
-	b := cfg.Behavior
-	pace := xhs.NewPacer(time.Duration(b.NavIntervalSeconds.Min())*time.Second,
-		time.Duration(b.NavIntervalSeconds.Max())*time.Second, b.NavPerMinute)
-	if t, _ := guard.GetTime(tctx, r.DB, guard.KeyLastNav); !t.IsZero() {
-		pace.Seed(t)
+	// 不模拟真人节奏：直接导航到目标 URL，轮询 __INITIAL_STATE__ 就绪即继续，没有任何故意的停顿
+	c := xhs.NewClient(sess.Page)
+	hide, checkVisible := windowChecks(sess.Headless, cfg.Browser.Silent)
+	if sess.Headless {
+		r.Log.Info("无头模式：用专用 profile 启动的 Chrome（--headless=new），结束时关闭", "profile", cfg.Browser.UserDataDir)
+		if cfg.Browser.Silent {
+			r.Log.Debug("无头模式没有窗口，忽略 browser.silent")
+		}
 	}
-	pace.OnReserve(func(t time.Time) { _ = guard.SetTime(bg(ctx), r.DB, guard.KeyLastNav, t) })
-	h := xhs.NewHuman()
-	c := xhs.NewClient(sess.Page, h).Use(pace, xhs.NewFocus(r.Log))
 
-	if cfg.Browser.Silent {
-		if err := sess.Hide(tctx); err != nil {
+	if hide {
+		hidden, err := sess.Hide(tctx)
+		if err != nil {
 			return nil, newErr(CodeUnavailable, "静默模式: %v", err)
 		}
-		r.Log.Info("静默模式：Chrome 窗口已移到屏幕外，结束时放回")
+		if hidden {
+			r.Log.Info("静默模式：Chrome 窗口已移到屏幕外，结束时放回")
+		} else {
+			r.Log.Warn("静默模式无效：窗口管理器把 Chrome 窗口限制在屏幕内（macOS 常见），窗口保持可见照常工作；" +
+				"建议把 browser.silent 设为 false")
+		}
+	}
+	if checkVisible && !c.Visible(tctx) {
+		return nil, newErr(CodeUnavailable, "Chrome 窗口被最小化或不可见；请恢复窗口，或开启 browser.silent")
 	}
 
-	ok, err := c.IsLoggedIn(tctx)
-	if err != nil {
-		return nil, r.fail(tctx, err, gone)
-	}
-	if !ok {
-		return nil, r.fail(tctx, xhs.ErrLoginRequired, gone)
-	}
-	if !c.Visible(tctx) {
-		return nil, newErr(CodeUnavailable, "Chrome 窗口被最小化或不可见，无法拟人输入；请恢复窗口，或开启 browser.silent")
-	}
-	if err := h.Sleep(tctx, 2*time.Second, 5*time.Second); err != nil { // 先看一眼首页
-		return nil, r.fail(tctx, err, gone)
-	}
-
-	// 5. 搜索：搜索框逐字输入 + 回车
+	// 5. 搜索：直接打开搜索结果页，等卡片出现（未登录 → auth_required，验证页 → cooldown）
+	start := time.Now()
 	r.Log.Info("开始搜索", "关键词", q.Text, "limit", q.Limit, "detail", q.Detail)
-	if err := c.Search(tctx, q.Text); err != nil {
+	cs, emptyNote, err := c.Search(tctx, q.Text)
+	if err != nil {
 		return nil, r.fail(tctx, fmt.Errorf("搜索 %q: %w", q.Text, err), gone)
 	}
-	if err := r.pause(tctx, h); err != nil {
-		return nil, r.fail(tctx, err, gone)
+	var notes []string
+	if emptyNote != "" {
+		notes = append(notes, emptyNote)
 	}
 
-	// 6. 收集卡片：只读已渲染的 __INITIAL_STATE__，不够时像人一样向下滚动
+	// 6. 收集卡片：不够时滚动到底部，等新卡片出现（没有随机停顿）
 	now := r.now()
 	var items []Item
 	cards := map[string]xhs.Card{}
-	stagnant := 0
 	for i := 0; ; i++ {
-		cs, err := c.Cards(tctx, xhs.SourceSearch)
-		if err != nil {
-			return nil, r.fail(tctx, err, gone)
-		}
-		added := 0
 		for _, card := range cs {
 			if _, dup := cards[card.ID]; dup {
 				continue
 			}
 			cards[card.ID] = card
 			items = append(items, CardItem(card, now))
-			added++
-		}
-		if i > 0 && added == 0 {
-			stagnant++
-		} else {
-			stagnant = 0
 		}
 		usable, _ := FilterSince(items, q.SinceHours, now)
-		if len(usable) >= q.Limit || i >= cfg.Channel.MaxScrolls || stagnant >= 2 {
+		if len(usable) >= q.Limit || i >= cfg.Channel.MaxScrolls || len(cs) == 0 {
 			break
 		}
-		if err := c.Scroll(tctx); err != nil {
+		more, grew, err := c.MoreCards(tctx, q.Text, len(cs))
+		if err != nil {
 			return nil, r.fail(tctx, err, gone)
 		}
-		if err := h.Sleep(tctx, 1200*time.Millisecond, 3500*time.Millisecond); err != nil {
-			return nil, r.fail(tctx, err, gone)
+		if !grew {
+			break // 没有更多结果
 		}
+		cs = more
 	}
 	scanned := len(items)
 	items, unknown := FilterSince(items, q.SinceHours, now)
@@ -208,45 +193,43 @@ func (r *Runner) Search(ctx context.Context, q Query) (*Response, error) {
 	if len(items) > q.Limit {
 		items = items[:q.Limit]
 	}
-	r.Log.Info("结果", "扫描", scanned, "保留", len(items))
+	r.Log.Info("结果", "扫描", scanned, "保留", len(items), "耗时", time.Since(start).Round(time.Millisecond).String())
 
-	// 7. detail：在列表里点开前 N 篇阅读（拟人停留），读正文/发布时间/标签；不点赞、不做任何互动
-	var notes []string
-	opened, fails := 0, 0
-	for i := 0; i < min(q.Detail, len(items)); i++ {
-		card := cards[items[i].ID]
-		note, err := c.OpenNote(tctx, card, xhs.SourceSearch)
+	// 7. detail：用带 xsec_token 的笔记 URL 在新标签页直接打开前 N 篇（最多并行 detail_concurrency 个），
+	//    读完立即关闭标签页；不点赞、不做任何互动。任一篇触发验证页 → 立即停止所有标签页
+	opened := 0
+	if n := min(q.Detail, len(items)); n > 0 {
+		targets := make([]xhs.Card, n)
+		for i := range targets {
+			targets[i] = cards[items[i].ID]
+		}
+		res, err := fetchDetails(tctx, targets, cfg.Channel.DetailConcurrency, func(ctx context.Context, card xhs.Card) (*xhs.Note, error) {
+			page, err := sess.NewPage(ctx)
+			if err != nil {
+				return nil, err
+			}
+			defer xhs.ClosePage(page)
+			return xhs.NewClient(page).ReadNote(ctx, card, xhs.SourceSearch)
+		})
 		if err != nil {
-			if fatal(tctx, err) {
-				return nil, r.fail(tctx, err, gone)
-			}
-			r.Log.Warn("打开笔记失败", "id", card.ID, "err", err)
-			items[i].Extra["detail_error"] = err.Error()
-			if err := c.CloseNote(tctx); err != nil && fatal(tctx, err) {
-				return nil, r.fail(tctx, err, gone)
-			}
-			if fails++; fails >= 2 {
-				notes = append(notes, "连续 2 篇笔记打开失败，停止读取正文")
-				break
-			}
-			continue
-		}
-		fails = 0
-		rs := cfg.Behavior.ReadSeconds
-		if err := c.Dwell(tctx, time.Duration(rs.Min())*time.Second, time.Duration(rs.Max())*time.Second); err != nil {
 			return nil, r.fail(tctx, err, gone)
 		}
-		ApplyNote(&items[i], note)
-		opened++
-		if err := c.CloseNote(tctx); err != nil {
-			if fatal(tctx, err) {
-				return nil, r.fail(tctx, err, gone)
+		failed := 0
+		for i, nr := range res {
+			switch {
+			case nr.Note != nil:
+				ApplyNote(&items[i], nr.Note)
+				opened++
+			case nr.Err != nil:
+				r.Log.Warn("读取笔记失败", "id", items[i].ID, "err", nr.Err)
+				items[i].Extra["detail_error"] = nr.Err.Error()
+				failed++
 			}
-			r.Log.Warn("关闭笔记失败", "err", err)
 		}
-		if err := r.pause(tctx, h); err != nil {
-			return nil, r.fail(tctx, err, gone)
+		if failed > 0 {
+			notes = append(notes, fmt.Sprintf("%d 篇笔记读取正文失败（见 extra.detail_error）", failed))
 		}
+		r.Log.Info("详情", "读取", opened, "失败", failed, "累计耗时", time.Since(start).Round(time.Millisecond).String())
 	}
 	if q.SinceHours > 0 && opened > 0 { // 详情里的发布时间是最终依据
 		items, _ = FilterSince(items, q.SinceHours, now)
@@ -263,9 +246,12 @@ func (r *Runner) Search(ctx context.Context, q Query) (*Response, error) {
 		Meta: Meta{Query: q.Text, Ignored: []string{}, Notes: buildNotes(q, scanned, opened, unknown, notes)}}, nil
 }
 
-func (r *Runner) pause(ctx context.Context, h *xhs.Human) error {
-	d := r.Cfg.Behavior.ActionDelayMs
-	return h.Sleep(ctx, time.Duration(d.Min())*time.Millisecond, time.Duration(d.Max())*time.Millisecond)
+// windowChecks 是否需要静默移窗、是否需要确认窗口可见。无头 Chrome 没有窗口，两者都跳过。
+func windowChecks(headless, silent bool) (hide, checkVisible bool) {
+	if headless {
+		return false, false
+	}
+	return silent, true
 }
 
 // buildNotes meta.notes：说明各参数实际是怎么生效的。

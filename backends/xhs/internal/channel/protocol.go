@@ -69,17 +69,17 @@ func Describe() Descriptor {
 		Protocol: Protocol,
 		Name:     Name,
 		Title:    "小红书",
-		Description: "搜索小红书笔记（真实浏览器、拟人节奏，慢，有封号风险，按需使用）。" +
-			"返回标题、作者、点赞/评论/收藏数和发布时间；前 detail 篇会打开读正文、标签和 IP 属地。" +
+		Description: "搜索小红书笔记（真实浏览器快速模式：直接打开搜索结果页和笔记页，不模拟真人节奏，风控/封号风险高于拟人操作，按需使用）。" +
+			"返回标题、作者、点赞/评论/收藏数和发布时间；前 detail 篇会并行打开读正文、标签和 IP 属地。" +
 			"同一时刻只允许一个进程使用浏览器：另一次搜索或 login 进行中返回 busy，风控冷却期返回 cooldown。",
 		Capabilities: []string{"search"},
-		QuerySyntax:  "普通关键词（在搜索框里逐字输入），不支持高级语法；sort=time/score 为在综合排序结果内的本地重排",
-		CostHint: "单次搜索约 1–3 分钟（detail 每多 1 篇约多 20–30 秒，页面加载按拟人节奏跨进程节流）；" +
-			"触发风控验证后熔断冷却（默认 6 小时，连续触发翻倍），期间返回 cooldown；有封号风险，按需使用；" +
-			"耗时为保守的经验估计，未经实测验证",
+		QuerySyntax:  "普通关键词（作为搜索结果页 URL 的 keyword 参数），不支持高级语法；sort=time/score 为在综合排序结果内的本地重排",
+		CostHint: "估计 detail=0 约 5–10 秒、detail=3 约 10–20 秒（不含 Chrome 冷启动；详情页默认最多并行 3 个标签页）；" +
+			"不模拟真人节奏，风控风险更高；触发风控验证后熔断冷却（默认 6 小时，连续触发翻倍），期间返回 cooldown；" +
+			"耗时为估计值，未经实测验证",
 		Options: map[string]OptionSpec{
 			"detail": {Type: "int", Default: DefaultDetail,
-				Description: fmt.Sprintf("打开排在最前的 N 篇笔记读取正文、发布时间、标签和 IP 属地（0–%d，默认 %d；每篇约 20–30 秒）", MaxDetail, DefaultDetail)},
+				Description: fmt.Sprintf("打开排在最前的 N 篇笔记读取正文、发布时间、标签和 IP 属地（0–%d，默认 %d；并行读取，估计每批多几秒，未实测）", MaxDetail, DefaultDetail)},
 		},
 	}
 }

@@ -1,4 +1,4 @@
-// Package guard 防封状态的共享逻辑：冷却熔断、跨进程页面加载节流的键名与判断。
+// Package guard 防封状态的共享逻辑：风控冷却熔断的键名与判断。
 // 每次 channel search 都是一个新进程，所有状态都持久化在同一个
 // SQLite（store 的 kv 表）里，各进程读写同一组键。
 package guard
@@ -15,8 +15,6 @@ const (
 	KeyCooldownUntil = "cooldown_until"
 	// KeyCooldownStreak 连续触发次数，冷却时长按它翻倍。一次完整成功的搜索会把它清零。
 	KeyCooldownStreak = "cooldown_streak"
-	// KeyLastNav 最近一次（已预约的）页面导航时刻（RFC3339Nano），新进程据此遵守 nav_interval_seconds。
-	KeyLastNav = "last_nav_at"
 )
 
 // MaxCooldown 冷却时长上限。
@@ -69,24 +67,6 @@ func CooldownUntil(ctx context.Context, kv KV, now time.Time) (time.Time, error)
 		return time.Time{}, nil
 	}
 	return until, nil
-}
-
-// GetTime 读取一个时间类 kv（RFC3339 / RFC3339Nano 均可）；没有或格式错误返回零值。
-func GetTime(ctx context.Context, kv KV, key string) (time.Time, error) {
-	s, err := kv.GetKV(ctx, key)
-	if err != nil || s == "" {
-		return time.Time{}, err
-	}
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		return time.Time{}, nil
-	}
-	return t, nil
-}
-
-// SetTime 写入一个时间类 kv（RFC3339Nano）。
-func SetTime(ctx context.Context, kv KV, key string, t time.Time) error {
-	return kv.SetKV(ctx, key, t.Format(time.RFC3339Nano))
 }
 
 // Seconds 向上取整到秒，至少 1。用于 retry_after_seconds。
