@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "xsearch Cookie Sync",
+  "version": "1.0.0",
+  "description": "把 x.com 登录 cookie（auth_token / ct0）推送到本机 xsearch，供 twscrape 后端使用。只发往 127.0.0.1。",
+  "permissions": ["cookies", "alarms", "storage"],
+  "host_permissions": ["https://x.com/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "xsearch Cookie Sync" }
+}

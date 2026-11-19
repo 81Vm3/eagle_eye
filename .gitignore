@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# 运行产物
+runs/
+
+# 小红书 Go 后端（ee-xhs 维护）：构建产物、本地数据、含私密信息的配置
+bin/eagle-xhs
+backends/xhs/bin/
+backends/xhs/data/
+backends/xhs/config.yaml
+
+# Commander 验收后删除的临时报告
+docs/reports/

@@ -1,0 +1,6 @@
+# 构建产物在仓库根目录 bin/（由顶层 .gitignore 管理）
+/bin/
+# 运行数据：xhs.db（冷却/节流状态）、chrome-profile、browser.lock
+/data/
+# 本机配置（cdp_launch 路径等）
+config.yaml

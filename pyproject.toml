@@ -1,0 +1,22 @@
+[project]
+name = "eagle-eye"
+version = "0.1.0"
+description = "给 Agent 用的统一搜索/信息中间层：X、小红书等只是渠道"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+x = ["twscrape"]
+
+[project.scripts]
+eagle = "eagle_eye.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["eagle_eye*"]
+
+[tool.setuptools.package-data]
+"eagle_eye.channels.x" = ["topics/*.toml", "chrome-extension/*"]

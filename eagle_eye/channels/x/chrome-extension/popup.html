@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: 13px/1.5 system-ui, sans-serif; width: 260px; margin: 12px; color: #1f2328; background: #fff; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    .row { display: flex; justify-content: space-between; margin: 4px 0; }
+    .ok { color: #1a7f37; } .bad { color: #cf222e; } .muted { color: #656d76; }
+    button { width: 100%; margin-top: 10px; padding: 6px; cursor: pointer; }
+    #msg { margin-top: 8px; word-break: break-all; }
+    code { background: #f6f8fa; padding: 0 3px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>xsearch Cookie Sync</h1>
+  <div class="row"><span>x.com 登录</span><span id="login" class="muted">…</span></div>
+  <div class="row"><span>本机接收服务</span><span id="server" class="muted">…</span></div>
+  <button id="sync">立即同步</button>
+  <div id="msg" class="muted"></div>
+  <p class="muted">在 WSL 运行 <code>bin/eagle x login</code> 后，扩展会在 30 秒内自动推送。</p>
+  <script src="popup.js"></script>
+</body>
+</html>
