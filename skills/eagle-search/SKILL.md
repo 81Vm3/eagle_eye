@@ -1,6 +1,6 @@
 ---
 name: eagle-search
-description: 用 eagle_eye 统一搜索 X (Twitter)、小红书等外部信息渠道：一次查询并发多渠道、合并去重；也能跑 X 预设主题、抓 X 长文。当用户想知道某话题在社交平台上最近在讨论什么、找某人/某话题的帖子、找资源/经验帖，或需要超出本地代码库的外部信息时使用。
+description: 用 eagle_eye 统一搜索 X (Twitter)、小红书、Reddit 等外部信息渠道：一次查询并发多渠道、合并去重；也能跑 X 预设主题、抓 X 长文。当用户想知道某话题在社交平台上最近在讨论什么、找某人/某话题的帖子、找资源/经验帖，或需要超出本地代码库的外部信息时使用。
 compatibility: 需要能执行 shell 命令，PATH 上有 eagle 命令（eagle-eye，uv tool install 安装），并能访问网络。
 ---
 
@@ -22,16 +22,19 @@ eagle channels --format json  # 机器可读
 ```bash
 eagle search 'AI Agent' --limit 10 --format json               # 不带 -c：只搜默认渠道（目前只有 x）
 eagle search 'AI 编程 教程' -c xhs --limit 5                   # 小红书默认不参与，必须显式 -c xhs
+eagle search 'local llm' -c reddit --limit 5                   # Reddit 默认不参与，必须显式 -c reddit
+eagle search 'MCP' -c reddit --opt subreddit=LocalLLaMA        # 限定 subreddit：优先 Arctic Shift，不耗 Tavily 额度
 eagle search 'from:dotey "开源模型"' -c x --hours 48 --sort time
 eagle search 'MCP server' -c x --opt pages=2 --opt keywords=github,开源 --opt exclude=spam
-eagle search '露营装备' -c x,xhs --opt x.pages=2 --opt xhs.detail=0   # 渠道前缀只给该渠道
+eagle search '露营装备' -c x,xhs,reddit --opt x.pages=2 --opt xhs.detail=0   # 渠道前缀只给该渠道
 ```
 
 - **小红书（xhs）默认不参与**（风控/封号风险较高）：只有用户的问题确实需要小红书内容（国内生活/消费/经验类）时才显式 `-c xhs` 或 `-c x,xhs`。
+- **Reddit（reddit）默认不参与**（第三方 API 有额度和条款约束）：用户确实需要 Reddit 讨论/经验时显式 `-c reddit` 或 `-c x,reddit`。
 - 参数：`-c 渠道,...`（不填 = eagle.toml 里 enabled 且 default 的渠道）、`--limit N`（合并后总数，默认 20）、`--hours N`（默认不限）、`--sort relevance|time|score`、`--opt 键=值`（渠道私有参数，值按 JSON 解析；键见 `eagle channels`）、`--format md|json`、`--full`（Markdown 不截断）。
 - JSON 输出：`{query, channels, items[], errors{渠道: {code,message,retry_after_seconds}}, meta{渠道: {count, ignored, notes, ...}}}`。Item 字段：`channel, id, url, title, text, author{id,name,url}, created_at, metrics{likes,reposts,comments,views,collects}, score, lang, extra`。
 - 部分渠道失败时仍 exit 0，失败原因在 `errors`；**全部失败 exit 1**。
-- 查询语法按渠道不同：X 支持高级搜索语法（`from:`、`lang:zh`、`min_faves:N`、`"短语"`、`OR`、`-排除词`、`filter:links`、`since:/until:` 等，用 `since:` 时别传 `--hours`）；小红书只支持普通关键词。多渠道一起搜时用普通关键词，X 专用语法请 `-c x`。
+- 查询语法按渠道不同：X 支持高级搜索语法（`from:`、`lang:zh`、`min_faves:N`、`"短语"`、`OR`、`-排除词`、`filter:links`、`since:/until:` 等，用 `since:` 时别传 `--hours`）；小红书和 Reddit 只支持普通关键词（Reddit 用 `--opt subreddit` / `--opt author` 限定）。多渠道一起搜时用普通关键词，X 专用语法请 `-c x`。
 
 ## 3. 各渠道代价（动手前估算）
 
@@ -39,8 +42,18 @@ eagle search '露营装备' -c x,xhs --opt x.pages=2 --opt xhs.detail=0   # 渠�
 |---|---|---|---|
 | x | 快，每页约 20 条 ≈ 1 次请求、几秒 | twscrape 按 X 返回的限速头按账号、按接口自动锁定等待，15 分钟窗口重置，具体次数以 X 为准（经验约几十次，未实测）；twitterapi.io 免费档 1 次 / 5 秒；`pages` × 查询数 + `articles` = 请求数 | `rate_limited`、`auth_required`（cookie 失效） |
 | xhs | 快速模式：估计 `detail=0` 约 5–10 秒、`detail=3` 约 10–20 秒（不含 Chrome 冷启动；详情页并行读取） | 渠道不限次数，但**不模拟真人节奏、封号风险较高**：搜得越多越容易触发风控，触发后熔断冷却（默认 6 小时，连续触发翻倍） | `busy`（`eagle xhs login` 进行中，或另一个小红书搜索正在进行）、`cooldown`（风控熔断）、`unavailable`（未安装 / 找不到 Chrome / 专用 profile 被占用）、`auth_required`（登录失效） |
+| reddit | 约 1–3 秒（Tavily/Arctic 网络耗时）；缓存命中不请求 provider | Tavily 免费档约 1,000 信用/月，basic 1 信用/次，最多 20 条；Arctic Shift 免费但无 SLA；本地缓存默认 24 小时（`cache_ttl_hours=0` 关闭） | `auth_required`（缺少/无效 Tavily key）、`rate_limited`（Tavily 429/402/432，默认 60 秒）、`unavailable`（连接失败/超时）、`internal`（5xx） |
 
 - 小红书的耗时是估计值，未经实测验证。
+- Reddit：普通全站关键词走 Tavily（`include_domains=["reddit.com"]`），带 `--opt subreddit=...` 或 `--opt author=...`
+  时优先走免费的 Arctic Shift；Arctic 超时/422/5xx/连不上会回退 Tavily，原因写在 `meta.reddit.notes`。
+  Tavily 结果默认用 Arctic Shift 批量补 author/score/评论数/时间/正文（`--opt enrich=false` 关闭），补全失败只写
+  `meta.notes`，不丢主结果。缺字段保持空/null，不要自己猜。`--opt cache=false` 只跳过本次读缓存，结果仍写回。
+  降级结果（回退、补全失败、`ignored` 非空）只缓存短 TTL，并在 `meta.degraded=true` 标记；`--hours` 查询命中缓存后
+  会按当前时间重新过滤，过滤条数写在 `meta.notes`。
+  没有 Tavily key 时普通查询报 `auth_required`；告诉用户设置 `EAGLE_REDDIT_TAVILY_API_KEY` 或写
+  `$EAGLE_HOME/reddit/config.toml` 的 `api_key`。不要读取或打印 key。只带 subreddit/author 的 Arctic 查询不需要 key。
+- Reddit 是第三方搜索/归档接口，非 Reddit 官方 API；字段可能不完整、正文可能是搜索摘要片段，汇报时说明并附原文链接。
 - 小红书：**速度快不代表可以多搜，风控/封号风险较高，按需使用**——一次对话里尽量只搜 1–2 次，关键词想清楚再搜，**不要批量、高频或循环调用**；它默认不参与，不加 `-c xhs` 就不会访问小红书。
 - 小红书参数：`--opt detail=N`（0–10，默认 3）打开前 N 篇读正文、标签、IP 属地（并行读取）；只要标题/指标时用 `detail=0` 最快、最省风险。`limit` 上限 50。
 - 小红书 `--hours` 有效（发布时间由笔记 ID 推算）；`--sort time|score` 只是在综合排序结果内**本地重排**，不是平台筛选。关键词没有结果时返回空 `items`、原因在 `meta.xhs.notes`，不是错误：换关键词前先想清楚，不要连续试很多个。
@@ -51,8 +64,8 @@ eagle search '露营装备' -c x,xhs --opt x.pages=2 --opt xhs.detail=0   # 渠�
 
 | code | 处理 |
 |---|---|
-| `auth_required` | 告诉用户需要人工登录，**绝不自动重试**。X：用户确认浏览器扩展已装、x.com 已登录，然后请用户在终端运行 `eagle x login`；小红书：请用户在终端运行 `eagle xhs login`。不要自己读写 cookie。 |
-| `rate_limited`（X）/ `cooldown` | 按 `retry_after_seconds` 之后再试，或换渠道；**绝不绕过**风控。小红书的 `cooldown` 绝不自动重试，告诉用户冷却到何时 |
+| `auth_required` | 告诉用户需要人工登录或配置凭证，**绝不自动重试**。X：用户确认浏览器扩展已装、x.com 已登录，然后请用户在终端运行 `eagle x login`；小红书：请用户在终端运行 `eagle xhs login`；Reddit：设置 `EAGLE_REDDIT_TAVILY_API_KEY` 或 `$EAGLE_HOME/reddit/config.toml` 的 `api_key`。不要自己读写 cookie 或打印 key。 |
+| `rate_limited`（X / Reddit）/ `cooldown` | 按 `retry_after_seconds` 之后再试，或换渠道；**绝不绕过**风控。小红书的 `cooldown` 绝不自动重试，告诉用户冷却到何时；Reddit 没有 `Retry-After` 时默认 60 秒 |
 | `busy` | 稍后再试或换渠道（小红书 busy 表示正在登录或另一个搜索在跑，不要去停它） |
 | `bad_query` | 修正参数（看 `eagle channels` 的 options） |
 | `unavailable` | 告诉用户原因，不要自动重试。缺二进制/配置：请用户在终端运行 `eagle setup`。小红书找不到 Chrome：请用户安装 Chrome 或在小红书 config.yaml 设置 `browser.chrome_path`；专用 profile 被占用：请用户关掉 `eagle xhs browser` 打开的 Chrome 窗口；配置为 `headless: false` 且连不上 Chrome：请用户运行 `eagle xhs browser`。`eagle setup --check` 可帮助定位 |

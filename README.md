@@ -1,6 +1,6 @@
 # eagle_eye
 
-给 Agent 用的统一搜索/信息中间层：一条命令并发搜索多个信息渠道（目前是 **X (Twitter)** 和 **小红书**），
+给 Agent 用的统一搜索/信息中间层：一条命令并发搜索多个信息渠道（目前是 **X (Twitter)**、**小红书** 和 **Reddit**），
 结果统一成同一种格式、合并去重，供人阅读（Markdown）或 Agent 处理（JSON）。以后会接更多渠道。
 
 由原 X 搜索（Python）和小红书（Go）两个项目合并而来，只保留通用搜索能力。
@@ -91,6 +91,31 @@ Windows 原生暂不支持（预留了 `.exe` 资产和 `%APPDATA%\eagle_eye`，
   无头 Chrome 仍可能被平台识别（未实测），介意的话设 `headless: false`，改为接管 `eagle xhs browser` 启动的有界面 Chrome。
   报「不可用」（`unavailable`）的常见原因：找不到 Chrome（安装它，或设置 `browser.chrome_path`）；专用 profile 被占用（关掉 `eagle xhs browser` 打开的窗口）。
   详见 `backends/xhs/README.md`。
+- **Reddit**：默认不参与搜索，必须显式 `-c reddit`。全站关键词走 Tavily Search API（`include_domains=["reddit.com"]`），
+  指定 `subreddit` 或 `author` 时优先走免费的 Arctic Shift（不消耗 Tavily 额度）；Tavily 结果还会用 Arctic Shift 补全
+  author、score、评论数、时间和正文。Arctic Shift（及 Tavily）不可用时返回协议错误码，不会伪装结果。
+  Reddit 是非官方数据接口，字段可能缺失或不完整；使用时遵守 Tavily 条款和 Reddit 内容政策。
+
+配置 Tavily key（二选一；环境变量优先）：
+
+```bash
+export EAGLE_REDDIT_TAVILY_API_KEY=tvly-...   # 只放当前会话
+
+# 或写入 $EAGLE_HOME/reddit/config.toml（建议 chmod 600，不要提交到 git）
+mkdir -p "$EAGLE_HOME/reddit"
+cat > "$EAGLE_HOME/reddit/config.toml" <<'EOF'
+api_key = "tvly-..."
+cache_ttl_hours = 24
+degraded_cache_ttl_hours = 1   # 回退/补全失败/author 被忽略的结果只缓存 1 小时
+enrich_timeout_seconds = 5     # Arctic 补全单独用短超时
+EOF
+chmod 600 "$EAGLE_HOME/reddit/config.toml"
+```
+
+没有 Tavily key 时，普通全站查询报 `auth_required`；只带 `subreddit`/`author` 的 Arctic 查询仍可用。
+结果缓存在 `$EAGLE_HOME/reddit/cache/`（默认 24 小时，`cache_ttl_hours = 0` 关闭），命令里的 `--opt cache=false`
+只跳过本次读取、结果仍会写回缓存。降级结果（Arctic 回退 Tavily、补全失败、Tavily 无法按 `author` 过滤）使用
+`degraded_cache_ttl_hours`（默认 1 小时）并在 `meta.degraded` 标记；`since_hours` 查询命中缓存后会按当前时间重新过滤。
 
 ## 用法
 
@@ -99,6 +124,8 @@ eagle channels                                       # 有哪些渠道、是否�
 eagle search 'AI Agent' --limit 10                   # 默认渠道（目前只有 X）并发搜索，Markdown 输出
 eagle search 'AI Agent lang:zh' -c x --hours 24 --sort score --format json
 eagle search '露营装备' -c xhs --limit 5 --opt detail=3   # 小红书默认不参与，必须显式 -c xhs
+eagle search 'local llm' -c reddit --limit 5              # Reddit 默认不参与，必须显式 -c reddit
+eagle search 'MCP' -c reddit --opt subreddit=LocalLLaMA  # 限定 subreddit：优先 Arctic Shift，不耗 Tavily 额度
 eagle search 'MCP' -c x,xhs --opt x.pages=2           # 渠道私有参数，可带渠道前缀
 ```
 
@@ -149,6 +176,7 @@ eagle skill install [--target DIR] [--copy]
 |---|---|---|
 | X | 几秒一页（约 20 条） | twscrape：按 X 返回的限速头（`x-rate-limit-remaining/reset`）自动锁定并等待，按账号、按接口计，15 分钟窗口重置；具体次数以 X 实际返回为准（社区经验约每 15 分钟几十次，未经实测）。twitterapi.io：免费档 0.2 QPS（1 次 / 5 秒，未充值的新账号；充值/老客户更高） |
 | 小红书 | 快速模式（直达搜索结果页、详情页默认 3 个标签并行读取）：估计 `detail=0` 约 5–10 秒、`detail=3` 约 10–20 秒（不含 Chrome 冷启动） | 渠道不限搜索次数，但不模拟真人节奏，风控/封号风险更高（建议小号）；触发风控验证会熔断冷却（默认 6 小时，连续触发翻倍），期间返回 `cooldown` |
+| Reddit | 约 1–3 秒（Tavily/Arctic 的网络耗时；本地缓存命中不发请求） | Tavily 免费档约 1,000 信用/月，basic 搜索 1 信用/次，最多 20 条；Arctic Shift 免费但无 SLA；缓存默认 24 小时，命中不消耗额度 |
 
 `TWS_INTERVAL=2`（请求间隔秒）、`TWS_WAIT=60`（所有账号被锁时最多等待秒）、`INTERVAL=5.5`（twitterapi.io 请求间隔）是本项目客户端参数，不是平台限额（见 `eagle_eye/channels/x/settings.py`）。
 
@@ -156,6 +184,14 @@ eagle skill install [--target DIR] [--copy]
 `channel.timeout_seconds`（默认 120 秒）、`behavior.cooldown_hours`。
 
 小红书风控/封号风险较高，在 `eagle.toml` 里设了 `default = false`：不带 `-c` 的 `eagle search` 不会搜它，必须显式 `-c xhs`（或 `-c x,xhs`）。`eagle channels` 会标明每个渠道是否默认参与。
+
+Reddit 同样默认不参与（第三方 API 有额度和条款约束）：必须显式 `-c reddit`（或 `-c x,reddit`）。
+Reddit 参数：`--opt subreddit=LocalLLaMA`、`--opt author=spez` 走 Arctic Shift 搜索并补全字段；`--opt enrich=false`
+跳过 Tavily 结果的 Arctic 补全；`--opt cache=false` 跳过本次读缓存（结果仍写回）。`--hours` 与 `--sort time|score`
+都在本地过滤/重排；命中缓存时仍按当前时间重新应用 `--hours`。没有结果时返回空 `items` 并在 `meta.notes` 说明。
+Arctic 回退/补全失败的结果会在 `meta.degraded=true` 标记，只缓存短 TTL。没有 Tavily key 时普通查询报 `auth_required`
+（配置 `EAGLE_REDDIT_TAVILY_API_KEY` 或 `$EAGLE_HOME/reddit/config.toml` 的 `api_key`）；Arctic 查询不需要 key。
+Reddit 401/403 报 `auth_required`，429/402/432 报 `rate_limited`（默认 60 秒），连接失败/超时报 `unavailable`，5xx 报 `internal`。
 
 小红书参数：`--opt detail=N`（0–10，默认 3，打开前 N 篇读正文）；`--hours` 有效（发布时间由笔记 ID 推算）；`--sort time|score` 是在综合排序结果内本地重排；关键词没有结果时返回空列表（原因写在 `meta.notes`），不算失败。`cooldown` / `auth_required` 不要自动重试，后者需人工 `eagle xhs login`。
 

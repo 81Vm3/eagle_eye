@@ -23,3 +23,10 @@ default = false   # 风控/封号风险较高：不带 -c 的 eagle search 不�
 title = "小红书"
 description = "搜索小红书笔记（真实浏览器快速模式，不模拟真人节奏，风控/封号风险较高）"
 cost_hint = "快速模式：估计 detail=0 约 5–10 秒、detail=3 约 10–20 秒（不含 Chrome 冷启动，未实测）；不模拟真人节奏，风控/封号风险较高，按需使用；风控后返回 cooldown，浏览器占用时返回 busy"
+
+# 进程内 Reddit 渠道：Tavily 全站搜索 + Arctic Shift 限定搜索/补全，本地缓存
+[channels.reddit]
+type = "python"
+class = "eagle_eye.channels.reddit.adapter:RedditChannel"
+enabled = true
+default = false   # 使用第三方 API/有额度与 ToS 风险：不带 -c 的 eagle search 不搜它，必须显式 -c reddit

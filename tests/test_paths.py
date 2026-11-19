@@ -80,13 +80,14 @@ class ConfigLookupTest(unittest.TestCase):
             os.environ.pop("EAGLE_CONFIG", None)
             reg = Registry.load()
             self.assertEqual(reg.path, paths.DEFAULT_CONFIG)
-            self.assertEqual(reg.names(), ["x", "xhs"])
+            self.assertEqual(reg.names(), ["x", "xhs", "reddit"])
             xhs = reg.get("xhs")
             exe = "eagle-xhs" + paths.exe_suffix()
             self.assertEqual(xhs.command, [str(self.home / "bin" / exe), "channel", "-config", "config.yaml"])
             self.assertEqual(xhs.native_command, [str(self.home / "bin" / exe)])
             self.assertEqual(xhs.cwd, str(self.home / "xhs"))
             self.assertFalse(reg.is_default("xhs"))
+            self.assertFalse(reg.is_default("reddit"))
             # 二进制不存在：不崩溃，describe 报 unavailable
             from eagle_eye.core.models import ChannelError
             with self.assertRaises(ChannelError) as cm:
