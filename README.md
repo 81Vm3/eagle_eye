@@ -32,16 +32,52 @@ eagle channels
 `eagle` 不在 PATH 时运行 `uv tool update-shell` 后重开终端。升级：`uv tool upgrade eagle-eye && eagle setup`。
 数据目录、配置查找顺序、Release 资产等约定见 [docs/distribution.md](docs/distribution.md)。
 
-## Linux
+## Linux 快速开始
 
-步骤与 macOS 相同（`uv tool install git+https://github.com/81Vm3/eagle_eye` → `eagle setup` → …），区别：
+```bash
+# 1. 装 uv（已有可跳过）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# 2. 安装 eagle 命令（Python ≥ 3.11，uv 会自动准备；twscrape 一并装好）
+uv tool install git+https://github.com/81Vm3/eagle_eye
+# 3. 一步准备：建 EAGLE_HOME（${XDG_CONFIG_HOME:-~/.config}/eagle_eye）、下载并校验小红书渠道二进制、生成小红书配置
+eagle setup
+# 4. X：打印扩展目录（有图形界面时 --open 用 xdg-open 打开）→ Chrome 扩展页（chrome://extensions）打开「开发者模式」
+#    →「加载已解压的扩展程序」选该目录；浏览器里登录 x.com，再运行（扩展会自动推送 cookie）
+eagle x extension --open
+eagle x login
+# 5. 小红书（可选）：先装 Chrome（见下方），首次扫码登录（弹出一次专用 Chrome 窗口，登录后自动关闭），之后在后台无头搜索
+eagle xhs login
+eagle search -c xhs '露营装备' --limit 5
+# 6. 让你的 Agent 用上 eagle（见下文「给 Agent」）
+eagle skill install
+# 体检 / 看渠道
+eagle setup --check
+eagle channels
+```
 
-- EAGLE_HOME 默认 `${XDG_CONFIG_HOME:-~/.config}/eagle_eye`（可用环境变量 `EAGLE_HOME` 改）。
-- `eagle x extension --open` 用 `xdg-open`；没有图形界面时只打印目录。
-- 小红书首次流程同样是 `eagle setup` → `eagle xhs login` → `eagle search -c xhs ...`；需要 Linux 版 Chrome/Chromium（如 `sudo apt install google-chrome-stable`，
-  找不到时报 `unavailable`，不会自动下载），`login` 需要图形界面（WSL 用 WSLg）。
-- 浏览器不能直接加载该目录时（例如 WSL 里给 Windows 上的 Chrome/Edge 用），复制一份出去再加载：
+小红书渠道需要本机有 Chrome / Chromium（找不到时报 `unavailable`，不会自动下载），任选其一：
+
+```bash
+# Debian / Ubuntu（x86_64）：Google Chrome
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install ./google-chrome-stable_current_amd64.deb
+# Fedora
+sudo dnf install chromium
+# 装在非标准位置时，在 $EAGLE_HOME/xhs/config.yaml 设置 browser.chrome_path
+```
+
+- Google Chrome 没有 Linux arm64 版，arm64 机器请装发行版的 Chromium。
+- `eagle xhs login` 需要图形界面（桌面会话或 WSLg）；没有图形界面的服务器无法扫码登录，搜索本身是无头的。
+- 只用 X 渠道的话不需要 Chrome，`eagle setup --check` 里 Chrome 那一项会显示 `!`，不影响使用。
+
+### WSL
+
+- 按上面的 Linux 步骤在 WSL 里装 Chrome 并 `eagle xhs login`（WSLg 会弹出窗口），无头搜索在 WSL 里运行。
+- 用 Windows 上的 Chrome/Edge 装 X 扩展时，浏览器不能直接加载 WSL 路径，复制一份出去再加载：
   `eagle x extension --copy-to /mnt/c/Users/<用户名>/eagle-x-cookie`（改了扩展后重新复制，再在扩展页点「重新加载」）。
+  X 的 cookie 接收服务监听 `127.0.0.1:18631`，需要 WSL 开启 mirrored 网络，Windows 上的浏览器才能访问到。
+- mirrored 网络下 WSL 与 Windows 共用 `127.0.0.1`：若改用接管模式（`browser.headless: false` + `cdp_url`），
+  调试端口不要用 9222——Windows 上日常 Chrome 开了远程调试时会占用它。
 
 Windows 原生暂不支持（预留了 `.exe` 资产和 `%APPDATA%\eagle_eye`，尚未适配）。
 
