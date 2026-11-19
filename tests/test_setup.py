@@ -216,18 +216,57 @@ class SetupTest(unittest.TestCase):
         self.assertIn("[✓] Chrome（无头模式）: /usr/bin/google-chrome", out)
         self.assertNotIn("调试端口", out)
 
+    @contextlib.contextmanager
+    def _chrome_env(self, candidates=(), on_path=None):
+        """完全隔离 run_check 里的 Chrome 查找：平台默认位置只用 candidates，PATH 查找只认 on_path（{命令名: 路径}）。
+        注意 find_chrome 的 which 默认参数在定义时绑定了 shutil.which，patch shutil.which 无效，必须注入。"""
+        on_path = dict(on_path or {})
+        which = mock.Mock(side_effect=on_path.get)
+        real = setup_cmd.find_chrome
+        with mock.patch.object(setup_cmd, "chrome_candidates", return_value=[str(c) for c in candidates]), \
+                mock.patch.object(setup_cmd, "find_chrome", functools.partial(real, which=which)):
+            yield which
+
+    def _fake_chrome(self, name="chrome"):
+        exe = self.dir / "chrome-bin" / name
+        exe.parent.mkdir(exist_ok=True)
+        exe.write_text("#!/bin/sh\n")
+        exe.chmod(0o755)
+        return exe
+
     def test_check_headless_no_chrome_warns_with_hint(self):
         self._setup_with_config("browser:\n  headless: true\n")
         with mock.patch.object(setup_cmd, "probe_cdp") as probe, \
-                mock.patch.object(setup_cmd, "chrome_candidates", return_value=[]), \
-                mock.patch.object(setup_cmd.shutil, "which", return_value=None):
+                self._chrome_env(candidates=[self.dir / "no-such-chrome"]) as which:
             code, out, _ = quiet(setup_cmd.run_check)
+        self.assertTrue(which.called)  # 确实走到了（被隔离的）PATH 查找
         self.assertEqual(code, 0, out)  # 小红书是可选渠道：找不到 Chrome 只警告，不影响 exit code
         probe.assert_not_called()
         self.assertIn("[!] Chrome（无头模式）", out)
         self.assertIn("体检通过", out)
         self.assertIn("请安装 Chrome", out)
         self.assertIn("browser.chrome_path", out)
+
+    def test_check_headless_chrome_on_path_ok(self):
+        exe = self._fake_chrome("google-chrome")
+        self._setup_with_config("browser:\n  headless: true\n")
+        with mock.patch.object(setup_cmd, "probe_cdp") as probe, \
+                self._chrome_env(on_path={"chromium": str(exe)}):
+            code, out, _ = quiet(setup_cmd.run_check)
+        self.assertEqual(code, 0, out)
+        probe.assert_not_called()
+        self.assertIn(f"[✓] Chrome（无头模式）: {exe}（PATH", out)
+
+    def test_check_headless_chrome_platform_default_ok(self):
+        exe = self._fake_chrome()
+        self._setup_with_config("browser:\n  headless: true\n")
+        with mock.patch.object(setup_cmd, "probe_cdp") as probe, \
+                self._chrome_env(candidates=[self.dir / "missing", exe]) as which:
+            code, out, _ = quiet(setup_cmd.run_check)
+        self.assertEqual(code, 0, out)
+        probe.assert_not_called()
+        which.assert_not_called()  # 平台默认位置优先于 PATH
+        self.assertIn(f"[✓] Chrome（无头模式）: {exe}（平台默认位置", out)
 
     def test_check_headless_false_probes_cdp(self):
         self._setup_with_config("browser:\n  headless: false\n  cdp_url: http://127.0.0.1:9\n")
@@ -382,6 +421,19 @@ class ExtensionSkillTest(unittest.TestCase):
             code, out, _ = quiet(xcli.main, ["extension", "--open"])
         self.assertEqual(code, 0)
         self.assertEqual(call.call_args[0][0], ["open", out.strip()])
+
+    def test_extension_open_linux_with_and_without_xdg_open(self):
+        with mock.patch.object(sys, "platform", "linux"), mock.patch.object(xcli.subprocess, "call") as call, \
+                mock.patch.object(xcli.shutil, "which", side_effect=lambda n: "/x/xdg-open" if n == "xdg-open" else None):
+            code, out, _ = quiet(xcli.main, ["extension", "--open"])
+        self.assertEqual(code, 0)
+        self.assertEqual(call.call_args[0][0], ["/x/xdg-open", out.strip()])
+        with mock.patch.object(sys, "platform", "linux"), mock.patch.object(xcli.subprocess, "call") as call, \
+                mock.patch.object(xcli.shutil, "which", return_value=None):
+            code, _, err = quiet(xcli.main, ["extension", "--open"])
+        self.assertEqual(code, 0)
+        call.assert_not_called()
+        self.assertIn("手动打开", err)
 
     def test_skill_install_symlink(self):
         target = self.dir / "skills"

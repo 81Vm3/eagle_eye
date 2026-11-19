@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from eagle_eye.channels.external import ExternalChannel, resolve_arg
 from eagle_eye.core.models import ChannelError, Query
@@ -109,6 +110,21 @@ class ExternalChannelTest(unittest.TestCase):
             with self.assertRaises(ChannelError) as cm:
                 ch.describe()
             self.assertEqual(cm.exception.code, "unavailable")
+
+    def test_bare_command_resolved_via_path(self):
+        # 裸命令名走 PATH：显式构造“PATH 里有 / 没有”两种情况，不依赖本机装了什么
+        with tempfile.TemporaryDirectory() as d:
+            exe = Path(d) / "eagle-fake-chan"
+            exe.write_text("#!/bin/sh\nexit 0\n")
+            exe.chmod(0o755)
+            with mock.patch.dict(os.environ, {"PATH": d}):
+                self.assertIsNone(ExternalChannel("t", {"command": ["eagle-fake-chan"]}, ROOT)._executable_error("eagle-fake-chan"))
+            with mock.patch.dict(os.environ, {"PATH": str(Path(d) / "empty")}):
+                ch = ExternalChannel("t", {"command": ["eagle-fake-chan"]}, ROOT)
+                with self.assertRaises(ChannelError) as cm:
+                    ch.describe()
+                self.assertEqual(cm.exception.code, "unavailable")
+                self.assertIn("PATH 中找不到", cm.exception.message)
 
     def test_native_passthrough(self):
         ch = ExternalChannel("t", {"command": ["true"], "native_command": [sys.executable, "-c", "import sys; sys.exit(len(sys.argv))"]}, ROOT)
