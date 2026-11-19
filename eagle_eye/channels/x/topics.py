@@ -1,9 +1,23 @@
-"""X 预设搜索主题：eagle_eye/channels/x/topics/<name>.toml，一个文件描述一类长期要搜的东西。"""
+"""X 预设搜索主题：<name>.toml，一个文件描述一类长期要搜的东西。
+
+查找目录（同名时前者优先）：$EAGLE_HOME/x/topics/（用户主题，安装模式推荐放这里）、
+包内 eagle_eye/channels/x/topics/（源码仓库里就是该目录）。
+"""
 
 import tomllib
 from pathlib import Path
 
+from ... import paths
+
 TOPICS_DIR = Path(__file__).resolve().parent / "topics"
+
+
+def user_topics_dir():
+    return paths.eagle_home() / "x" / "topics"
+
+
+def topic_dirs():
+    return [user_topics_dir(), TOPICS_DIR]
 
 DEFAULTS = {
     "description": "",
@@ -26,6 +40,9 @@ def path_for(name):
     p = Path(name)
     if p.suffix == ".toml" and p.exists():
         return p
+    for d in topic_dirs():
+        if (d / f"{name}.toml").exists():
+            return d / f"{name}.toml"
     return TOPICS_DIR / f"{name}.toml"
 
 
@@ -43,4 +60,4 @@ def load(name):
 
 
 def names():
-    return sorted(p.stem for p in TOPICS_DIR.glob("*.toml"))
+    return sorted({p.stem for d in topic_dirs() if d.is_dir() for p in d.glob("*.toml")})

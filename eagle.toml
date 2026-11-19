@@ -14,12 +14,12 @@ type = "external"
 # 子进程 cwd = backends/xhs，-config 用相对 cwd 的 config.yaml（不含 "/"，核心不做路径转换，无歧义）
 command = ["bin/eagle-xhs", "channel", "-config", "config.yaml"]
 cwd = "backends/xhs"
-timeout_seconds = 900
+timeout_seconds = 180
 describe_timeout_seconds = 30
 native_command = ["bin/eagle-xhs"]   # eagle xhs login 等原样透传（cwd 同上，默认读 config.yaml）
 enabled = true
-default = false   # 慢、有封号风险：不带 -c 的 eagle search 不搜它，必须显式 -c xhs
+default = false   # 风控/封号风险较高：不带 -c 的 eagle search 不搜它，必须显式 -c xhs
 # 以下仅在二进制不可用时供 eagle channels 展示
 title = "小红书"
-description = "搜索小红书笔记（真实浏览器、拟人节奏）"
-cost_hint = "慢：单次搜索约 1–3 分钟（真实浏览器拟人节奏）；有封号风险，按需使用；风控后会返回 cooldown，浏览器占用时返回 busy"
+description = "搜索小红书笔记（真实浏览器快速模式，不模拟真人节奏，风控/封号风险较高）"
+cost_hint = "快速模式：估计 detail=0 约 5–10 秒、detail=3 约 10–20 秒（不含 Chrome 冷启动，未实测）；不模拟真人节奏，风控/封号风险较高，按需使用；风控后返回 cooldown，浏览器占用时返回 busy"

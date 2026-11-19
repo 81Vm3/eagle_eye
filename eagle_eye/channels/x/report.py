@@ -1,4 +1,4 @@
-"""把推文渲染成 Markdown，供人或 agent 阅读、交给 Claude 归纳。"""
+"""把推文渲染成 Markdown，供人或 agent 阅读、交给 LLM 归纳。"""
 
 from .pipeline import parse_time
 

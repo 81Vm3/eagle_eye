@@ -11,23 +11,33 @@
     command = ["bin/eagle-xhs", "channel", ...]
     ...
 
-配置文件位置：环境变量 EAGLE_CONFIG，否则仓库根目录的 eagle.toml。相对路径一律相对配置文件所在目录（仓库根目录）。
+配置文件位置：EAGLE_CONFIG > $EAGLE_HOME/eagle.toml > 包内默认 eagle_eye/defaults/eagle.toml（见 eagle_eye/paths.py）。
+command / native_command / cwd 中的 {home}（EAGLE_HOME）、{exe}（Windows 为 .exe）先展开；
+展开后仍是相对路径的，相对配置文件所在目录解析。开发模式下 bin/eagle 把 EAGLE_CONFIG 设为仓库根 eagle.toml。
 """
 
 from __future__ import annotations
 
 import importlib
-import os
 import tomllib
 from pathlib import Path
 
+from .. import paths
 from .channel import BrokenChannel, Channel
 
 ROOT = Path(__file__).resolve().parents[2]
+EXPAND_KEYS = ("command", "native_command", "cwd")
 
 
 def default_config_path():
-    return Path(os.environ.get("EAGLE_CONFIG") or ROOT / "eagle.toml")
+    return paths.config_path()[0]
+
+
+def expand_entry(cfg):
+    """展开 {home}/{exe} 占位（只处理路径相关的键）。"""
+    if not isinstance(cfg, dict):
+        return cfg
+    return {k: (paths.expand(v) if k in EXPAND_KEYS else v) for k, v in cfg.items()}
 
 
 def _build_python(name, cfg, root):
@@ -66,12 +76,13 @@ class Registry:
     def load(cls, path=None):
         path = Path(path) if path else default_config_path()
         if not path.exists():
-            raise FileNotFoundError(f"找不到渠道配置 {path}（可用 EAGLE_CONFIG 指定）")
+            raise FileNotFoundError(f"找不到渠道配置 {path}（可用 EAGLE_CONFIG 或 --config 指定）")
         with open(path, "rb") as f:
             data = tomllib.load(f)
         chans = data.get("channels") or {}
         if not isinstance(chans, dict):
             raise ValueError(f"{path}: [channels] 格式不对")
+        chans = {name: expand_entry(cfg) for name, cfg in chans.items()}
         return cls(chans, root=path.resolve().parent, path=path)
 
     def names(self):

@@ -1,7 +1,19 @@
 #!/bin/sh
-# 从任意目录调用：~/eagle_eye/bin/eagle <子命令> ...
-# 优先用项目 .venv（装了 twscrape），没有就退回系统 python3（X 渠道只能用 twitterapi.io 后端）
-ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# 开发模式入口：从任意目录调用 <仓库>/bin/eagle <子命令> ...（安装模式请用 PATH 上的 eagle，见 README）
+# 未设置 EAGLE_CONFIG 时使用仓库根 eagle.toml（小红书用 backends/xhs/config.yaml、仓库 bin/eagle-xhs）。
+# 优先用项目 .venv（装了 twscrape），没有就退回系统 python3（X 渠道只能用 twitterapi.io 后端）。
+# 可移植地解析软链接（macOS 的 readlink 没有 -f）
+SELF=$0
+while [ -L "$SELF" ]; do
+  LINK=$(readlink "$SELF")
+  case $LINK in
+    /*) SELF=$LINK ;;
+    *) SELF=$(dirname "$SELF")/$LINK ;;
+  esac
+done
+ROOT=$(cd "$(dirname "$SELF")/.." && pwd -P)
 PY=python3
 [ -x "$ROOT/.venv/bin/python" ] && PY="$ROOT/.venv/bin/python"
+EAGLE_CONFIG=${EAGLE_CONFIG:-$ROOT/eagle.toml}
+export EAGLE_CONFIG
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec "$PY" -m eagle_eye "$@"

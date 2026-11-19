@@ -2,7 +2,10 @@
 
     eagle channels [--format md|json]           列出渠道、describe 元数据和是否可用
     eagle search <查询...> [-c x,xhs] [...]     多渠道并发搜索，合并输出
-    eagle <渠道名> ...                          渠道原生子命令（eagle x search|run|topics|article|login；eagle xhs login）
+    eagle setup [--check] [--version V]        准备 EAGLE_HOME：下载小红书渠道二进制、生成配置；--check 只体检
+    eagle skill install [--agent agents|claude | --target DIR] [--copy]  安装 Agent Skill（默认 ~/.agents/skills，软链）
+    eagle skill path | show                     打印包内 Skill 目录 / 打印 SKILL.md 正文（供不支持 Skill 的 Agent）
+    eagle <渠道名> ...                          渠道原生子命令（eagle x search|run|topics|article|login|extension；eagle xhs login|browser）
 
 stdout 只有结果；进度和错误都在 stderr。search 全部渠道失败时 exit 1，参数错误 exit 2。
 """
@@ -18,7 +21,8 @@ from .core.models import SORTS, ChannelError, Query
 from .core.registry import Registry
 from .core.router import fan_out
 
-COMMANDS = ("channels", "search")
+COMMANDS = ("channels", "search", "setup", "skill")
+NO_REGISTRY = ("setup", "skill")  # 不需要先读渠道配置（配置坏了也能 setup）
 
 
 def log(msg):
@@ -113,7 +117,7 @@ def build_parser(channel_names=()):
         prog="eagle",
         description=f"eagle_eye：给 Agent 用的统一搜索中间层{natives}",
     )
-    p.add_argument("--config", help="渠道配置文件（默认 EAGLE_CONFIG 或仓库根目录 eagle.toml）")
+    p.add_argument("--config", help="渠道配置文件（默认 EAGLE_CONFIG > $EAGLE_HOME/eagle.toml > 包内默认）")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("channels", help="列出渠道、describe 元数据和是否可用")
@@ -133,6 +137,39 @@ def build_parser(channel_names=()):
     s.add_argument("--format", default="md", choices=["md", "json"])
     s.add_argument("--full", action="store_true", help="Markdown 不截断正文")
     s.set_defaults(func=cmd_search)
+
+    from .setup_cmd import cmd_setup
+    from .skill_cmd import cmd_skill
+
+    st = sub.add_parser("setup", help="准备 EAGLE_HOME：下载并校验小红书渠道二进制、生成 xhs/config.yaml（幂等）")
+    st.add_argument("--check", action="store_true", help="只体检（渠道可用性、二进制版本、配置、Chrome 调试端口），不改文件")
+    st.add_argument("--version", help="eagle-xhs 版本（默认与本包版本相同）")
+    st.add_argument("--from-source", action="store_true", help="在源码仓库里用 go 本地构建，而不是下载")
+    st.add_argument("--force", action="store_true", help="即使已是目标版本也重新下载")
+    st.set_defaults(func=cmd_setup)
+
+    from .skill_cmd import AGENT_DIRS, DEFAULT_AGENT
+
+    sk = sub.add_parser("skill", help="Agent Skill（eagle-search，开放标准 Agent Skills）：安装 / 查看")
+    sks = sk.add_subparsers(dest="skill_cmd", required=True)
+    si = sks.add_parser(
+        "install",
+        help="把 eagle-search Skill 装到 <skills 目录>/eagle-search（默认 ~/.agents/skills，软链，已存在不覆盖）",
+    )
+    where = si.add_mutually_exclusive_group()
+    where.add_argument(
+        "--agent",
+        choices=sorted(AGENT_DIRS),
+        help=f"预设 skills 目录：agents = ~/.agents/skills（默认，跨工具的用户级约定），"
+        f"claude = ~/.claude/skills（Claude Code）；默认 {DEFAULT_AGENT}",
+    )
+    where.add_argument("--target", metavar="DIR", help="自定义 skills 目录（其他 Agent 请查阅其文档），装到 DIR/eagle-search")
+    si.add_argument("--copy", action="store_true", help="复制而不是软链")
+    si.set_defaults(func=cmd_skill)
+    sks.add_parser("path", help="打印包内 Skill 目录").set_defaults(func=cmd_skill)
+    sks.add_parser(
+        "show", help="把 SKILL.md 正文打印到 stdout（不支持 Skill 的 Agent：放进 AGENTS.md / 系统提示词 / 规则文件）"
+    ).set_defaults(func=cmd_skill)
     return p
 
 
@@ -141,6 +178,10 @@ def main(argv=None):
     config = None
     if len(argv) >= 2 and argv[0] == "--config":
         config, argv = argv[1], argv[2:]
+    if argv and argv[0] in NO_REGISTRY:
+        args = build_parser().parse_args(argv)
+        args.config = config
+        return args.func(args)
     try:
         reg = Registry.load(config)
     except (OSError, ValueError) as e:

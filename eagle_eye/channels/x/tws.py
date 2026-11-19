@@ -4,8 +4,8 @@
 所以 pipeline、raw.json、--from-raw 都不用改。
 
 账号登记（一次性，cookie 至少含 auth_token 和 ct0，建议用小号）：
-    bin/eagle x login            # 配合 extensions/x-cookie/ 浏览器扩展自动导入
-    bin/eagle x login --manual 名字   # 手动粘贴
+    eagle x login                # 配合 extensions/x-cookie/ 浏览器扩展自动导入
+    eagle x login --manual 名字   # 手动粘贴
 """
 
 import asyncio
@@ -20,11 +20,22 @@ from .settings import env
 # twscrape 默认会往 PostHog 发匿名统计，这里关掉（必须在 import twscrape 之前设置）
 os.environ.setdefault("TWS_TELEMETRY", "0")
 
-DEFAULT_DB = Path.home() / ".config" / "xsearch" / "twscrape.db"
+from ... import paths
+
+# 原 xsearch 的账号库位置：存在就沿用（已有 cookie 不用重新登录），否则放 EAGLE_HOME/x/twscrape.db
+LEGACY_DB = Path.home() / ".config" / "xsearch" / "twscrape.db"
+DEFAULT_DB = LEGACY_DB  # 兼容旧名
+
+
+def default_db(legacy=None):
+    legacy = LEGACY_DB if legacy is None else Path(legacy)
+    return legacy if legacy.exists() else paths.eagle_home() / "x" / "twscrape.db"
 
 
 def db_path():
-    return Path(env("TWS_DB") or DEFAULT_DB)
+    """EAGLE_X_TWS_DB / XSEARCH_TWS_DB 优先；否则旧路径存在则沿用，再否则 EAGLE_HOME/x/twscrape.db。"""
+    v = env("TWS_DB")
+    return Path(v).expanduser() if v else default_db()
 
 
 def available():
@@ -83,10 +94,10 @@ class TwscrapeClient:
         try:
             from twscrape import API
         except ImportError as e:
-            raise XError("未安装 twscrape：make venv（或 uv pip install --python .venv/bin/python twscrape）", "unavailable") from e
+            raise XError("未安装 twscrape：重新安装 eagle-eye（twscrape 是默认依赖）；开发模式运行 make venv", "unavailable") from e
         db = Path(db or db_path())
         if not db.exists():
-            raise XError(f"twscrape 账号库不存在: {db}，需要人工运行 bin/eagle x login（配合 extensions/x-cookie/ 浏览器扩展自动导入）", "auth_required")
+            raise XError(f"twscrape 账号库不存在: {db}，需要人工运行 eagle x login（配合 extensions/x-cookie/ 浏览器扩展自动导入）", "auth_required")
         if interval is None:
             interval = float(env("TWS_INTERVAL", "2"))
         if wait_timeout is None:
@@ -122,7 +133,7 @@ class TwscrapeClient:
         except Exception:
             pass
         if not nat:
-            return XError(msg + "（没有可用账号，cookie 可能已失效：需要人工运行 bin/eagle x login）", "auth_required")
+            return XError(msg + "（没有可用账号，cookie 可能已失效：需要人工运行 eagle x login）", "auth_required")
         return XError(msg + f"（所有账号限速中，预计 {nat} 可用）", "rate_limited", 900)
 
     def _close_gen(self):

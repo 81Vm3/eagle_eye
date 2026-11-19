@@ -1,0 +1,24 @@
+# eagle_eye 安装模式的默认渠道注册表（随 Python 包附带）。
+# 覆盖方式：在 $EAGLE_HOME/eagle.toml 放一份自己的（或用 EAGLE_CONFIG 指向别的文件），优先于本文件。
+# {home} = EAGLE_HOME（见 docs/distribution.md），{exe} = Windows 上的 ".exe"、其他平台为空；由核心展开。
+# 开发模式（仓库里的 bin/eagle）用的是仓库根的 eagle.toml，不读本文件。
+
+[channels.x]
+type = "python"
+class = "eagle_eye.channels.x.adapter:XChannel"
+enabled = true
+default = true
+
+[channels.xhs]
+type = "external"
+# 二进制和配置由 eagle setup 准备：{home}/bin/eagle-xhs、{home}/xhs/config.yaml（数据在 {home}/xhs/data/）
+command = ["{home}/bin/eagle-xhs{exe}", "channel", "-config", "config.yaml"]
+cwd = "{home}/xhs"
+timeout_seconds = 180
+describe_timeout_seconds = 30
+native_command = ["{home}/bin/eagle-xhs{exe}"]   # eagle xhs login / browser 等原样透传（cwd 同上）
+enabled = true
+default = false   # 风控/封号风险较高：不带 -c 的 eagle search 不搜它，必须显式 -c xhs
+title = "小红书"
+description = "搜索小红书笔记（真实浏览器快速模式，不模拟真人节奏，风控/封号风险较高）"
+cost_hint = "快速模式：估计 detail=0 约 5–10 秒、detail=3 约 10–20 秒（不含 Chrome 冷启动，未实测）；不模拟真人节奏，风控/封号风险较高，按需使用；风控后返回 cooldown，浏览器占用时返回 busy"

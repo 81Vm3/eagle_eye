@@ -12,12 +12,18 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from ... import paths
 from . import core, pipeline, report, topics
 from . import tws
 from .api import make_client
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]  # 仓库根目录
-RUNS_DIR = PROJECT_ROOT / "runs" / "x"
+EXTENSION = ("extensions", "x-cookie")
+NO_TWSCRAPE = "未安装 twscrape：重新安装 eagle-eye（twscrape 是默认依赖）；开发模式运行 make venv"
+
+
+def runs_dir():
+    """源码仓库里是 runs/x，安装模式是 $EAGLE_HOME/runs/x。"""
+    return paths.runs_dir() / "x"
 
 
 def log(msg):
@@ -40,11 +46,11 @@ def save_run(out_dir, raw, items, md):
 
 
 def summarize(command, prompt, md, out_dir, timeout=900):
-    """把 results.md 通过 stdin 交给 claude -p 归纳，写到 digest.md。"""
+    """把 results.md 通过 stdin 交给 summarize_command（默认 claude -p，可换成任何从 stdin 读内容、最后一个参数是提示词的 CLI）归纳，写到 digest.md。"""
     if not shutil.which(command[0]):
         log(f"找不到 {command[0]}，跳过总结")
         return None
-    log("调用 Claude 生成总结…")
+    log(f"调用 {command[0]} 生成总结…")
     r = subprocess.run(command + [prompt], input=md, capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
         log(f"总结失败 (exit {r.returncode}): {r.stderr[:500]}")
@@ -94,7 +100,7 @@ def cmd_run(args):
     items = [pipeline.slim(x) for x in picked]
     log(f"过滤后保留 {len(items)} 条")
 
-    out_dir = Path(args.out) if args.out else RUNS_DIR / t["name"] / datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = Path(args.out) if args.out else runs_dir() / t["name"] / datetime.now().strftime("%Y%m%d-%H%M%S")
     md = report.to_markdown(items, t["description"] or t["name"], meta_lines(hours, raw, tweets, items))
     save_run(out_dir, raw, items, md)
 
@@ -127,7 +133,7 @@ def cmd_login(args):
         try:
             import twscrape  # noqa: F401
         except ImportError as e:
-            raise RuntimeError("未安装 twscrape：make venv（或 uv pip install --python .venv/bin/python twscrape）") from e
+            raise RuntimeError(NO_TWSCRAPE) from e
         from . import cookie_server
 
         try:
@@ -135,11 +141,11 @@ def cmd_login(args):
         except OSError as e:
             raise RuntimeError(f"端口 {cookie_server.port()} 启动失败: {e}") from e
         if not saved:
-            raise RuntimeError("超时没收到 cookie：确认已加载 extensions/x-cookie/ 扩展、已登录 x.com，再点扩展里的「立即同步」")
+            raise RuntimeError("超时没收到 cookie：确认已加载 cookie 同步扩展（目录见 eagle x extension）、已登录 x.com，再点扩展里的「立即同步」")
         return
     exe = shutil.which("twscrape", path=str(Path(sys.executable).parent)) or shutil.which("twscrape")
     if not exe:
-        raise RuntimeError("未安装 twscrape：make venv（或 uv pip install --python .venv/bin/python twscrape）")
+        raise RuntimeError(NO_TWSCRAPE)
     db = tws.db_path()
     db.parent.mkdir(parents=True, exist_ok=True)
     log(f"账号库: {db}")
@@ -156,12 +162,33 @@ def cmd_login(args):
 def cmd_topics(args):
     names = topics.names()
     if not names:
-        log(f"还没有预设主题：在 {topics.TOPICS_DIR} 下新建 <name>.toml（至少要有 queries），"
+        log(f"还没有预设主题：在 {topics.user_topics_dir()} 下新建 <name>.toml（至少要有 queries），"
             "或直接 eagle x run <toml 文件路径>。字段说明见 README「X 预设主题」。")
         return
     for name in names:
         t = topics.load(name)
         print(f"{name}\t{t['description']}")
+
+
+def cmd_extension(args):
+    """打印包内 cookie 同步扩展目录（Chrome/Edge「加载已解压的扩展程序」选它）；可复制出去或在文件管理器打开。"""
+    src = paths.bundled(*EXTENSION)
+    target = src
+    if args.copy_to:
+        dest = Path(args.copy_to).expanduser()
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in sorted(src.iterdir()):
+            if f.is_file():
+                shutil.copy2(f, dest / f.name)
+        log(f"已复制到 {dest}（只覆盖同名文件）；之后在浏览器扩展页点该扩展的「重新加载」")
+        target = dest
+    print(target.resolve())
+    if args.open:
+        opener = "open" if sys.platform == "darwin" else shutil.which("xdg-open")
+        if sys.platform == "darwin" or opener:
+            subprocess.call([opener, str(target)])
+        else:
+            log("当前平台不支持 --open，请手动打开上面的目录")
 
 
 def build_parser():
@@ -190,12 +217,12 @@ def build_parser():
     s.add_argument("--save", help="同时把 raw.json / results.json / results.md 存到该目录")
     s.set_defaults(func=cmd_search)
 
-    r = sub.add_parser("run", help="运行预设主题（eagle_eye/channels/x/topics/），结果写入 runs/x/<主题>/<时间>/，stdout 打印结果文件路径")
-    r.add_argument("topic", help="主题名（eagle_eye/channels/x/topics/<name>.toml）或 toml 文件路径")
+    r = sub.add_parser("run", help="运行预设主题（$EAGLE_HOME/x/topics/ 或包内 topics/），结果写入 runs/x/<主题>/<时间>/（安装模式在 $EAGLE_HOME 下），stdout 打印结果文件路径")
+    r.add_argument("topic", help="主题名（<主题目录>/<name>.toml，见 eagle x topics）或 toml 文件路径")
     r.add_argument("--hours", type=float, help="覆盖主题的 window_hours")
     r.add_argument("--from-raw", help="复用已有 raw.json，不调用搜索接口（调过滤规则用）")
     r.add_argument("--no-articles", action="store_true", help="不抓长文")
-    r.add_argument("--summarize", action="store_true", help="用主题里的 prompt 调 claude -p 生成 digest.md")
+    r.add_argument("--summarize", action="store_true", help="用主题里的 prompt 调 summarize_command（主题可配置，默认 claude -p）生成 digest.md")
     r.add_argument("-o", "--out", help="输出目录")
     r.set_defaults(func=cmd_run)
 
@@ -212,6 +239,11 @@ def build_parser():
 
     t = sub.add_parser("topics", help="列出预设主题")
     t.set_defaults(func=cmd_topics)
+
+    e = sub.add_parser("extension", help="打印 cookie 同步浏览器扩展的目录（「加载已解压的扩展程序」用）")
+    e.add_argument("--copy-to", metavar="DIR", help="把扩展文件复制到 DIR（不存在则创建，只覆盖同名文件），打印 DIR")
+    e.add_argument("--open", action="store_true", help="在文件管理器中打开目录（macOS 用 open，Linux 用 xdg-open）")
+    e.set_defaults(func=cmd_extension)
     return p
 
 
@@ -221,7 +253,7 @@ def main(argv=None):
         os.environ["EAGLE_X_BACKEND"] = args.backend
     try:
         args.func(args)
-    except RuntimeError as e:
+    except (RuntimeError, OSError) as e:
         log(f"错误: {e}")
         return 1
     return 0

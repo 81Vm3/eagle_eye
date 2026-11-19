@@ -96,7 +96,7 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(xhs.command[:2], [str(ROOT / "bin/eagle-xhs"), "channel"])
         self.assertEqual(xhs.command[2:], ["-config", "config.yaml"])  # 相对子进程 cwd，不做转换
         self.assertEqual(xhs.cwd, str(ROOT / "backends/xhs"))
-        self.assertEqual(xhs.timeout, 900)
+        self.assertEqual(xhs.timeout, 180)
         self.assertEqual(reg.default_names(), ["x"])  # xhs 必须显式 -c xhs
         self.assertTrue(reg.is_enabled("xhs"))
 

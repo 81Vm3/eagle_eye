@@ -1,22 +1,31 @@
 [project]
 name = "eagle-eye"
+# 与 eagle_eye/__init__.py 的 __version__、Release tag vX.Y.Z 保持一致（eagle setup 按它下载 eagle-xhs；tests/test_paths.py 校验）
 version = "0.1.0"
 description = "给 Agent 用的统一搜索/信息中间层：X、小红书等只是渠道"
+readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
-
-[project.optional-dependencies]
-x = ["twscrape"]
+# 核心只用标准库；twscrape 是 X 渠道默认后端，作为默认依赖装上
+dependencies = ["twscrape"]
 
 [project.scripts]
 eagle = "eagle_eye.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/81Vm3/eagle_eye"
+
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-include = ["eagle_eye*"]
+[tool.hatch.build.targets.wheel]
+packages = ["eagle_eye"]
 
-[tool.setuptools.package-data]
-"eagle_eye.channels.x" = ["topics/*.toml"]
+# 仓库顶层的扩展和 Skill 打进包内 eagle_eye/_bundled/（源码只此一份，eagle_eye/paths.py:bundled() 查找）
+[tool.hatch.build.targets.wheel.force-include]
+"extensions/x-cookie" = "eagle_eye/_bundled/extensions/x-cookie"
+"skills/eagle-search" = "eagle_eye/_bundled/skills/eagle-search"
+
+[tool.hatch.build.targets.sdist]
+include = ["/eagle_eye", "/extensions", "/skills", "/tests", "/docs", "/eagle.toml", "/README.md", "/AGENTS.md"]
+exclude = ["/docs/reports"]

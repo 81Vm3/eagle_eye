@@ -15,3 +15,5 @@ backends/xhs/config.yaml
 
 # Commander 验收后删除的临时报告
 docs/reports/
+eagle_eye/_bundled/
+dist/

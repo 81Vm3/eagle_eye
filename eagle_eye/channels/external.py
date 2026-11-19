@@ -67,7 +67,7 @@ class ExternalChannel(Channel):
     def _executable_error(self, argv0):
         if os.sep in argv0:
             if not os.path.exists(argv0):
-                return f"找不到可执行文件 {argv0}（外部渠道未构建？顶层运行 make build）"
+                return f"找不到可执行文件 {argv0}（安装模式运行 eagle setup；开发模式在仓库顶层运行 make build）"
             if not os.access(argv0, os.X_OK):
                 return f"{argv0} 没有执行权限"
         elif shutil.which(argv0) is None:
