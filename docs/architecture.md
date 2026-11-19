@@ -8,7 +8,7 @@
 ## 分层
 
 ```
-Agent ──(Skill 指引: skills/eagle-search)──► bin/eagle  (eagle_eye/cli.py)
+Agent ──(Skill 指引: skills/eagle-search)──► eagle（PATH 上；开发模式 bin/eagle）(eagle_eye/cli.py)
                            │
                  ┌─────────┴──────────┐
         eagle channels / search     eagle <渠道> ...（原生子命令：x → channels/x/cli.py；xhs → native_command 透传）
@@ -32,15 +32,19 @@ Agent ──(Skill 指引: skills/eagle-search)──► bin/eagle  (eagle_eye/c
 - **Python 核心 + 多语言渠道**：核心只用标准库；外部渠道走 JSON-over-stdio（`docs/channel-protocol.md`），
   进程隔离意味着渠道崩溃、卡死、依赖缺失都只影响它自己（超时杀进程组、坏 JSON → internal 并附 stderr 尾部）。
 - **统一 CLI + Skill，暂不做 MCP**：CLI 对任何 Agent / 人 / cron 都可用；以后要做 MCP 只需在 core 之上加一层。
-  Skill 源文件放仓库根 `skills/`（不放在 `.claude/` 下，避免在本仓库里被自动加载），由用户按需安装到自己的 Agent。
+  Skill 遵循开放标准 Agent Skills，与具体 Agent 无关；源文件放仓库根 `skills/`（不放在任何 Agent 会自动加载的目录下，如 `.agents/`、`.claude/`），
+  由用户按需接入：`eagle skill install`（默认 `~/.agents/skills`，`--agent claude` → `~/.claude/skills`，其他工具 `--target DIR`），
+  不支持 Skill 的 Agent 用 `eagle skill show` 把正文放进其指令文件，或直接运行 `eagle --help` / `eagle channels` 自行发现。
 - **错误即数据**：7 个错误码直接告诉 Agent 下一步（登录 / 等待 / 换渠道 / 修参数），多渠道时汇总在 `errors` 里，
   单渠道失败不影响整体；全部失败才 exit 1。
 - **合并策略**：`relevance` 时各渠道相关度不可比，按渠道顺序轮流交错；`time` / `score` 全局排序，缺值排最后。
   去重键是归一化 URL（忽略协议、www、twitter.com→x.com、结尾斜杠、fragment、`xsec_token`/`utm_*` 等易变参数）加 (渠道, id)。
 - **私有参数**：`--opt k=v` 给所有渠道，`--opt <渠道>.k=v` 只给该渠道；渠道忽略未知键并在 `meta.ignored` 说明。
-- **兼容**：X 渠道沿用 `~/.config/xsearch/twscrape.db` 和 `XSEARCH_*` 环境变量（`EAGLE_X_*` 优先），
+- **兼容**：X 渠道沿用 `~/.config/xsearch/twscrape.db`（存在时；否则 `$EAGLE_HOME/x/twscrape.db`）和 `XSEARCH_*` 环境变量（`EAGLE_X_*` 优先），
   cookie 接收服务协议不变，已装的浏览器扩展继续可用（扩展源码在 `extensions/x-cookie/`，manifest 名与 /ping 的 app 名仍是 "xsearch"）。
-- **浏览器扩展放顶层 `extensions/`**：按 `<渠道>-<用途>` 命名，不进 Python 包；Windows 浏览器加载的是复制出去的副本，用 `make sync-extension` 同步。
+- **浏览器扩展放顶层 `extensions/`**：按 `<渠道>-<用途>` 命名；源码只此一份，构建 wheel 时打进包内 `eagle_eye/_bundled/`（Skill 同理），
+  `eagle x extension` 打印其目录；浏览器不能直接加载该目录时（如 WSL 里给 Windows 浏览器用），用 `eagle x extension --copy-to DIR` 复制副本。
+- **分发**：`uv tool install` 安装 + `eagle setup` 下载小红书二进制；用户数据在 EAGLE_HOME。约定见 [distribution.md](distribution.md)。
 
 ## X 渠道的 Query 映射
 
@@ -61,4 +65,6 @@ twitterapi.io 免费档 0.2 QPS（未充值的新账号）。`TWS_INTERVAL` / `T
 ## 小红书渠道
 
 由 `backends/xhs`（Go，ee-xhs 维护）实现协议的 `channel describe|search`；核心通过 `eagle.toml` 登记，不写 Python。
-原生命令只有 `eagle xhs login`；`login` 与渠道搜索（以及并发的两次搜索）共用一把浏览器锁，因此会返回 `busy`；触发风控验证后熔断冷却，因此会返回 `cooldown`（不限搜索次数/间隔，不返回 `rate_limited`）。
+默认 `browser.headless: true`：每次搜索用专用 profile 自己启动无头 Chrome、用完关闭；`headless: false` 才接管 `cdp_url` 上的 Chrome（`eagle xhs browser` 启动，也用于调试）。
+原生命令是 `eagle xhs login`（有界面窗口扫码，与搜索共用专用 profile）/ `eagle xhs browser` 等（原样透传给 eagle-xhs）；`login` 与渠道搜索（以及并发的两次搜索）共用一把浏览器锁，因此会返回 `busy`；触发风控验证后熔断冷却，因此会返回 `cooldown`（不限搜索次数，不返回 `rate_limited`）。
+搜索为快速模式：直达搜索结果页 URL，详情页多标签并行读取（`channel.detail_concurrency` 默认 3），不模拟真人节奏，风控/封号风险更高；耗时估计见 README「渠道代价」（未实测）。

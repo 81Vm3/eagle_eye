@@ -5,28 +5,65 @@
 
 由原 X 搜索（Python）和小红书（Go）两个项目合并而来，只保留通用搜索能力。
 
-## 准备
+## macOS 快速开始
 
 ```bash
-make venv     # 用 uv 建 .venv 并装 twscrape（X 渠道默认后端）
-make build    # 构建小红书渠道 → bin/eagle-xhs（Go 1.26；不在 PATH 时自动用 /usr/local/go/bin/go。不构建时小红书渠道显示「不可用」，不影响 X）
+# 1. 装 uv（已有可跳过；也可 brew install uv）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# 2. 安装 eagle 命令（Python ≥ 3.11，uv 会自动准备；twscrape 一并装好）
+uv tool install git+https://github.com/81Vm3/eagle_eye
+# 3. 一步准备：建 EAGLE_HOME（~/Library/Application Support/eagle_eye）、下载并校验小红书渠道二进制、生成小红书配置
+eagle setup
+# 4. X：打印并打开 cookie 同步扩展目录 → Chrome 扩展页（chrome://extensions）打开「开发者模式」→「加载已解压的扩展程序」选该目录
+eagle x extension --open
+#    浏览器里登录 x.com，再运行（扩展会自动推送 cookie）
+eagle x login
+# 5. 小红书（可选，需本机装有 Chrome）：首次扫码登录（弹出一次专用 Chrome 窗口，登录后自动关闭），之后在后台无头搜索
+eagle xhs login
+eagle search -c xhs '露营装备' --limit 5
+# 6. 让你的 Agent 用上 eagle（见下文「给 Agent」）：支持 Agent Skills 的工具装 Skill（默认软链到 ~/.agents/skills/eagle-search；
+#    Claude Code 用 --agent claude，其他工具按其文档用 --target DIR）
+eagle skill install
+# 体检 / 看渠道
+eagle setup --check
+eagle channels
 ```
 
-- **X**：在 Edge/Chrome 加载 cookie 同步扩展 `extensions/x-cookie/`，登录 x.com，运行 `bin/eagle x login`，扩展会自动推送 cookie。
-  Windows 上的浏览器不能直接加载 WSL 路径，本机加载的是副本 `C:\Users\p3g4s\xsearch-cookie-extension\`（WSL 里是 `/mnt/c/Users/p3g4s/xsearch-cookie-extension/`）。
-  **改了扩展后需同步复制**：`make sync-extension`（目标目录可用 `EXT_DEST=...` 覆盖），再到 Edge 扩展页（`edge://extensions`）点该扩展的「重新加载」。
-  已经用过 `x_resource_search` 的不用重新登录（账号库仍是 `~/.config/xsearch/twscrape.db`，`XSEARCH_*` 环境变量继续有效，也可用 `EAGLE_X_*`）。
+`eagle` 不在 PATH 时运行 `uv tool update-shell` 后重开终端。升级：`uv tool upgrade eagle-eye && eagle setup`。
+数据目录、配置查找顺序、Release 资产等约定见 [docs/distribution.md](docs/distribution.md)。
+
+## Linux
+
+步骤与 macOS 相同（`uv tool install git+https://github.com/81Vm3/eagle_eye` → `eagle setup` → …），区别：
+
+- EAGLE_HOME 默认 `${XDG_CONFIG_HOME:-~/.config}/eagle_eye`（可用环境变量 `EAGLE_HOME` 改）。
+- `eagle x extension --open` 用 `xdg-open`；没有图形界面时只打印目录。
+- 小红书首次流程同样是 `eagle setup` → `eagle xhs login` → `eagle search -c xhs ...`；需要 Linux 版 Chrome/Chromium（如 `sudo apt install google-chrome-stable`，
+  找不到时报 `unavailable`，不会自动下载），`login` 需要图形界面（WSL 用 WSLg）。
+- 浏览器不能直接加载该目录时（例如 WSL 里给 Windows 上的 Chrome/Edge 用），复制一份出去再加载：
+  `eagle x extension --copy-to /mnt/c/Users/<用户名>/eagle-x-cookie`（改了扩展后重新复制，再在扩展页点「重新加载」）。
+
+Windows 原生暂不支持（预留了 `.exe` 资产和 `%APPDATA%\eagle_eye`，尚未适配）。
+
+## 渠道说明
+
+- **X**：默认用 twscrape（你自己的 X 账号 cookie，建议小号）。账号库：已用过原 `x_resource_search` 的继续用 `~/.config/xsearch/twscrape.db`，
+  不用重新登录；否则在 `$EAGLE_HOME/x/twscrape.db`。`XSEARCH_*` 环境变量继续有效，也可用 `EAGLE_X_*`。
   也可以改用付费的 twitterapi.io：`export TWITTERAPI_IO_KEY=...`。
-- **小红书**：`cp backends/xhs/config.example.yaml backends/xhs/config.yaml`，再 `bin/eagle xhs login` 扫码登录。渠道搜索只接管 `browser.cdp_url` 指向的 Chrome（新开一个标签页工作），没配 `cdp_url` 时报「不可用」。详见 `backends/xhs/README.md`。
+- **小红书**：配置在 `$EAGLE_HOME/xhs/config.yaml`（`eagle setup` 生成）。默认 `browser.headless: true`：搜索时用专用 profile
+  （`xhs/data/chrome-profile`）在后台启动无头 Chrome，用完关闭，不弹窗口；`eagle xhs login` 用同一个 profile 打开有界面窗口扫码。
+  无头 Chrome 仍可能被平台识别（未实测），介意的话设 `headless: false`，改为接管 `eagle xhs browser` 启动的有界面 Chrome。
+  报「不可用」（`unavailable`）的常见原因：找不到 Chrome（安装它，或设置 `browser.chrome_path`）；专用 profile 被占用（关掉 `eagle xhs browser` 打开的窗口）。
+  详见 `backends/xhs/README.md`。
 
 ## 用法
 
 ```bash
-bin/eagle channels                                   # 有哪些渠道、是否可用、查询语法、代价
-bin/eagle search 'Claude Code' --limit 10            # 默认渠道（目前只有 X）并发搜索，Markdown 输出
-bin/eagle search 'Claude Code lang:zh' -c x --hours 24 --sort score --format json
-bin/eagle search '露营装备' -c xhs --limit 5 --opt detail=3   # 小红书默认不参与，必须显式 -c xhs
-bin/eagle search 'MCP' -c x,xhs --opt x.pages=2       # 渠道私有参数，可带渠道前缀
+eagle channels                                       # 有哪些渠道、是否可用、查询语法、代价
+eagle search 'AI Agent' --limit 10                   # 默认渠道（目前只有 X）并发搜索，Markdown 输出
+eagle search 'AI Agent lang:zh' -c x --hours 24 --sort score --format json
+eagle search '露营装备' -c xhs --limit 5 --opt detail=3   # 小红书默认不参与，必须显式 -c xhs
+eagle search 'MCP' -c x,xhs --opt x.pages=2           # 渠道私有参数，可带渠道前缀
 ```
 
 stdout 只有结果，进度和错误在 stderr；部分渠道失败会在结果里列出原因，全部失败时退出码为 1。
@@ -34,20 +71,24 @@ stdout 只有结果，进度和错误在 stderr；部分渠道失败会在结果
 渠道原生命令：
 
 ```bash
-bin/eagle x topics                      # 列出 X 预设主题（仓库不自带，目录为空时只提示）
-bin/eagle x run <主题名或 toml 路径> [--summarize]   # 结果写到 runs/x/<主题>/<时间>/
-bin/eagle x article <推文ID>             # 抓 X 长文
-bin/eagle x search 'from:dotey' --hours 48
-bin/eagle xhs login                     # 小红书扫码登录，原样透传给 bin/eagle-xhs（cwd=backends/xhs，默认读 config.yaml）
+eagle x topics                          # 列出 X 预设主题（不自带，目录为空时只提示）
+eagle x run <主题名或 toml 路径> [--summarize]   # 结果写到 $EAGLE_HOME/runs/x/<主题>/<时间>/（开发模式在仓库 runs/）
+eagle x article <推文ID>                 # 抓 X 长文
+eagle x search 'from:dotey' --hours 48
+eagle x extension [--copy-to DIR] [--open]   # cookie 同步扩展目录
+eagle xhs login                         # 小红书扫码登录（原样透传给 eagle-xhs，cwd=$EAGLE_HOME/xhs，默认读 config.yaml）
+eagle xhs browser                       # 启动带远程调试端口的专用 Chrome：仅 headless: false 或调试时用，开着时会占用专用 profile
+eagle setup [--check]                   # 准备 / 体检
+eagle skill install [--target DIR] [--copy]
 ```
 
-小红书的 `login` 和渠道搜索共用一把浏览器锁（`backends/xhs/data/browser.lock`），同一时刻只有一个能驱动浏览器：
+小红书的 `login` 和渠道搜索共用一把浏览器锁（`xhs/data/browser.lock`），同一时刻只有一个能驱动浏览器：
 只有在 `login` 进行中、或另一个小红书搜索正在进行时，`eagle search -c xhs` 才会立即返回 `busy`。
 
 ### X 预设主题
 
 主题是一份 TOML，把一组长期要搜的 X 查询和本地过滤规则存起来，`eagle x run <名字>` 一次跑完。
-放在 `eagle_eye/channels/x/topics/<名字>.toml`（`eagle x topics` 列出这里的主题），也可以直接 `eagle x run path/to/topic.toml`。仓库不自带任何主题。
+放在 `$EAGLE_HOME/x/topics/<名字>.toml`（开发时也可放仓库 `eagle_eye/channels/x/topics/`，同名时前者优先；`eagle x topics` 列出这些主题），也可以直接 `eagle x run path/to/topic.toml`。不自带任何主题。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
@@ -64,52 +105,68 @@ bin/eagle xhs login                     # 小红书扫码登录，原样透传�
 | `max_results` | `150` | 最多保留条数 |
 | `sort` | `"score"` | `score` 或 `time` |
 | `prompt` | `""` | `--summarize` 时把 results.md 经 stdin 交给 `summarize_command`，这段作为提示词 |
-| `summarize_command` | `["claude", "-p"]` | 生成 digest.md 的命令 |
+| `summarize_command` | `["claude", "-p"]` | 生成 digest.md 的命令：results.md 从 stdin 传入，`prompt` 作为最后一个参数；可换成你所用 Agent / LLM 的任何同类 CLI，找不到命令时跳过总结 |
 
 ## 渠道代价
 
 | 渠道 | 速度 | 限额 |
 |---|---|---|
 | X | 几秒一页（约 20 条） | twscrape：按 X 返回的限速头（`x-rate-limit-remaining/reset`）自动锁定并等待，按账号、按接口计，15 分钟窗口重置；具体次数以 X 实际返回为准（社区经验约每 15 分钟几十次，未经实测）。twitterapi.io：免费档 0.2 QPS（1 次 / 5 秒，未充值的新账号；充值/老客户更高） |
-| 小红书 | 单次 1–3 分钟（真实浏览器、拟人节奏，页面加载跨进程节流）；`detail` 每多 1 篇约多 20–30 秒 | 渠道不限搜索次数；触发风控验证会熔断冷却（默认 6 小时，连续触发翻倍），期间返回 `cooldown` |
+| 小红书 | 快速模式（直达搜索结果页、详情页默认 3 个标签并行读取）：估计 `detail=0` 约 5–10 秒、`detail=3` 约 10–20 秒（不含 Chrome 冷启动） | 渠道不限搜索次数，但不模拟真人节奏，风控/封号风险更高（建议小号）；触发风控验证会熔断冷却（默认 6 小时，连续触发翻倍），期间返回 `cooldown` |
 
 `TWS_INTERVAL=2`（请求间隔秒）、`TWS_WAIT=60`（所有账号被锁时最多等待秒）、`INTERVAL=5.5`（twitterapi.io 请求间隔）是本项目客户端参数，不是平台限额（见 `eagle_eye/channels/x/settings.py`）。
 
-小红书的耗时是保守的经验估计，未经实测验证；节奏和冷却时长可在 `backends/xhs/config.yaml`（`behavior` 段）调整。
+小红书的耗时是估计值，未经实测验证。可调参数（小红书 config.yaml）：`channel.detail_concurrency`（详情并发，默认 3）、`channel.max_scrolls`、
+`channel.timeout_seconds`（默认 120 秒）、`behavior.cooldown_hours`。
 
-小红书慢、有封号风险，在 `eagle.toml` 里设了 `default = false`：不带 `-c` 的 `eagle search` 不会搜它，必须显式 `-c xhs`（或 `-c x,xhs`）。`eagle channels` 会标明每个渠道是否默认参与。
+小红书风控/封号风险较高，在 `eagle.toml` 里设了 `default = false`：不带 `-c` 的 `eagle search` 不会搜它，必须显式 `-c xhs`（或 `-c x,xhs`）。`eagle channels` 会标明每个渠道是否默认参与。
 
-小红书参数：`--opt detail=N`（0–10，默认 3，打开前 N 篇读正文）；`--hours` 有效（发布时间由笔记 ID 推算）；`--sort time|score` 是在综合排序结果内本地重排。`cooldown` / `auth_required` 不要自动重试，后者需人工 `bin/eagle xhs login`。
-
-## 安装 Skill
-
-Skill 源文件在仓库根的 `skills/eagle-search/SKILL.md`。仓库内**不建** `.claude/` 下的 Skill 目录，所以 clone 下来不会自动生效，需要你自行安装到要用它的 Agent。
-
-Claude Code（任选其一）：
-
-```bash
-# 用户级：所有项目都能用（软链接，仓库更新后 Skill 自动跟着更新）
-ln -s <仓库绝对路径>/skills/eagle-search ~/.claude/skills/eagle-search
-
-# 项目级：只在某个项目里用
-mkdir -p <某项目>/.claude/skills && cp -r <仓库绝对路径>/skills/eagle-search <某项目>/.claude/skills/
-```
-
-其他支持 SKILL.md 的 Agent，按各自的方式安装 `skills/eagle-search/` 目录即可。
-
-SKILL.md 的入口是 `<仓库路径>/bin/eagle`，示例命令假定仓库在 `~/eagle_eye`。仓库放在别处时，把 SKILL.md 里的 `~/eagle_eye` 换成实际路径（用软链接安装时直接改仓库里的文件会影响 git 状态，可改用拷贝后再改）。
+小红书参数：`--opt detail=N`（0–10，默认 3，打开前 N 篇读正文）；`--hours` 有效（发布时间由笔记 ID 推算）；`--sort time|score` 是在综合排序结果内本地重排；关键词没有结果时返回空列表（原因写在 `meta.notes`），不算失败。`cooldown` / `auth_required` 不要自动重试，后者需人工 `eagle xhs login`。
 
 ## 给 Agent
 
-Skill 见上一节「安装 Skill」（源文件 `skills/eagle-search/SKILL.md`）。工程约定、目录和新增渠道步骤见 [AGENTS.md](AGENTS.md)，
-架构见 [docs/architecture.md](docs/architecture.md)，渠道协议见 [docs/channel-protocol.md](docs/channel-protocol.md)。
+任何能执行 shell 命令的 Agent 都能用 `eagle`：stdout 只有结果（`--format json` 便于程序处理），进度和错误在 stderr。
+用法说明写在 Skill 文件 `skills/eagle-search/SKILL.md` 里（遵循开放标准 [Agent Skills](https://agentskills.io/specification)，随包附带）。
+安装 eagle 不会自动让 Agent 用上它，按你所用的工具选一种接入方式：
+
+**(a) 支持 Agent Skills 的工具：安装 Skill**
+
+```bash
+eagle skill install                  # 软链到 ~/.agents/skills/eagle-search（跨工具的用户级约定；升级 eagle-eye 后自动跟着更新）
+eagle skill install --agent claude   # Claude Code：装到 ~/.claude/skills/eagle-search
+eagle skill install --target DIR     # 其他工具：装到 DIR/eagle-search，DIR 为该工具读取 Skill 的目录（请查阅你所用工具的文档；项目级目录也可以）
+eagle skill install --copy           # 改为复制（想自己改 SKILL.md 时；可与上面任一组合）
+eagle skill path                     # 打印包内 Skill 目录，也可以自己按工具要求复制/链接
+```
+
+目标已存在时不覆盖（先删掉再装）。
+
+**(b) 不支持 Skill 的工具：把说明放进它的指令文件**
+
+```bash
+eagle skill show >> AGENTS.md        # 打印 Skill 正文；也可以粘贴到该 Agent 的系统提示词 / 规则文件里
+```
+
+**(c) 什么都不装**：直接让 Agent 运行 `eagle --help`、`eagle channels` 自行发现用法（会缺少 Skill 里的代价和错误处理建议）。
 
 ## 开发
 
+工程约定、目录和新增渠道步骤见 [AGENTS.md](AGENTS.md)，
+架构见 [docs/architecture.md](docs/architecture.md)，渠道协议见 [docs/channel-protocol.md](docs/channel-protocol.md)。
+
+开发模式直接用仓库里的 `bin/eagle`（未设置 `EAGLE_CONFIG` 时用仓库根 `eagle.toml`：小红书用 `bin/eagle-xhs`、`backends/xhs/config.yaml`、`backends/xhs/data/`，
+不读 EAGLE_HOME 里的二进制和配置；`eagle x run` 输出在仓库 `runs/`）。上文命令里的 `eagle` 换成 `bin/eagle` 即可；
+也可以把 `bin/eagle` 软链到 PATH 里（例如 `ln -s "$PWD/bin/eagle" ~/.local/bin/eagle`，注意别和 `uv tool install` 装的冲突）。
+
 ```bash
+make venv        # 用 uv 建 .venv 并装 twscrape（bin/eagle 优先用 .venv 的 python）
+make build       # 构建小红书渠道 → bin/eagle-xhs（Go 版本见 backends/xhs/go.mod；不在 PATH 时可 make GO=/path/to/go）
+cp backends/xhs/config.example.yaml backends/xhs/config.yaml   # 开发模式的小红书配置，再 bin/eagle xhs login
 make test        # Python 单测 + Go 单测（都不访问网络）
 make test-py     # = python3 -m unittest discover -s tests -t .
-make sync-extension   # 把 extensions/x-cookie/ 复制到 Windows 副本（EXT_DEST，默认 /mnt/c/Users/p3g4s/xsearch-cookie-extension）
+make sync-extension EXT_DEST=<浏览器加载的扩展目录>   # = bin/eagle x extension --copy-to EXT_DEST
+uv build         # 构建 wheel/sdist 到 dist/（扩展和 Skill 会被打进包内 eagle_eye/_bundled/）
 ```
 
 测试和 CI 里**绝不要跑真实的小红书渠道搜索**（有封号风险）：用 `tests/fixtures/fake_channel.py` 模拟外部渠道，或只测 describe / bad_query / 占住 browser.lock 时的 busy。
+CI（`.github/workflows/ci.yml`）在 ubuntu-latest 和 macos-latest 上跑 Python + Go 单测。

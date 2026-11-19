@@ -11,14 +11,18 @@ eagle_eye 是 Agent 的信息/搜索中间层：核心（Python）只认识统�
 
 ## 调用方式
 
-所有渠道都在仓库根目录的 `eagle.toml` 中登记（`EAGLE_CONFIG` 可指向别的文件）。外部渠道：
+所有渠道都在 `eagle.toml` 中登记：开发模式是仓库根的 `eagle.toml`（`bin/eagle` 设置 `EAGLE_CONFIG`），
+安装模式按 `EAGLE_CONFIG` > `$EAGLE_HOME/eagle.toml` > 包内 `eagle_eye/defaults/eagle.toml` 查找（见 [distribution.md](distribution.md)）。
+`command` / `native_command` / `cwd` 里的 `{home}`（EAGLE_HOME）和 `{exe}`（Windows 为 `.exe`，其他平台为空）由核心先展开，
+展开后仍是相对路径的再按配置文件所在目录解析。外部渠道：
 
 ```toml
 [channels.xhs]
 type = "external"
-command = ["bin/eagle-xhs", "channel", "-config", "config.yaml"]  # 程序路径相对仓库根目录；config.yaml 相对子进程 cwd
-cwd = "backends/xhs"            # 可选，子进程工作目录（相对仓库根目录）
-timeout_seconds = 900           # 可选，单次 search 超时（默认 300）
+command = ["bin/eagle-xhs", "channel", "-config", "config.yaml"]  # 程序路径相对配置文件目录；config.yaml 相对子进程 cwd
+# 安装模式（包内默认）：command = ["{home}/bin/eagle-xhs{exe}", "channel", "-config", "config.yaml"]，cwd = "{home}/xhs"
+cwd = "backends/xhs"            # 可选，子进程工作目录（相对配置文件目录）
+timeout_seconds = 180           # 可选，单次 search 超时（默认 300）
 describe_timeout_seconds = 30   # 可选，describe 超时（默认 30）
 native_command = ["bin/eagle-xhs"]  # 可选，`eagle xhs <参数...>` 原样透传给它（cwd 同上）
 enabled = true                  # 可选，默认 true；false 时完全不参与搜索
@@ -63,10 +67,10 @@ default = true
   "protocol": 1,
   "name": "xhs",
   "title": "小红书",
-  "description": "搜索小红书笔记（真实浏览器、拟人节奏，慢，有封号风险）",
+  "description": "搜索小红书笔记（真实浏览器快速模式，不模拟真人节奏，风控/封号风险较高）",
   "capabilities": ["search"],
   "query_syntax": "普通关键词，不支持高级语法",
-  "cost_hint": "单次搜索约 1–3 分钟；风控后熔断冷却",
+  "cost_hint": "估计 detail=0 约 5–10 秒、detail=3 约 10–20 秒；风控后熔断冷却",
   "options": {
     "detail": {"type": "int", "default": 3, "description": "打开前 N 篇笔记读取正文"}
   }
@@ -78,7 +82,7 @@ default = true
 ```json
 {
   "protocol": 1,
-  "text": "Claude Code 教程",
+  "text": "AI 编程教程",
   "limit": 20,
   "since_hours": null,
   "sort": "relevance",
