@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -120,7 +121,9 @@ class CliTest(unittest.TestCase):
         tdir = Path(self.tmp.name) / "topics"
         tdir.mkdir()
         cfg = (ROOT / "eagle.toml").read_text()
-        with mock.patch.object(topics, "TOPICS_DIR", tdir):
+        # 用户主题目录在 $EAGLE_HOME/x/topics，换成临时 EAGLE_HOME，不读真实用户主题
+        with mock.patch.object(topics, "TOPICS_DIR", tdir), \
+                mock.patch.dict(os.environ, {"EAGLE_HOME": str(Path(self.tmp.name) / "eagle_home")}):
             code, out, err = self.run_cli(cfg, "x", "topics")  # 空目录：stderr 提示，不报错
             self.assertEqual((code, out), (0, ""))
             self.assertIn("还没有预设主题", err)

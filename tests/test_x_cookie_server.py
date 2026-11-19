@@ -7,6 +7,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 from eagle_eye.channels.x import cookie_server
 
@@ -27,7 +28,10 @@ class ValidateTest(unittest.TestCase):
 
 class ServeTest(unittest.TestCase):
     def setUp(self):
-        os.environ["XSEARCH_COOKIE_PORT"] = "18699"
+        env = mock.patch.dict(os.environ, {"XSEARCH_COOKIE_PORT": "18699"})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("EAGLE_X_COOKIE_PORT", None)  # 用户环境里的 EAGLE_X_ 优先级更高
         self.saved = []
 
         async def fake_save(name, auth, ct0, db=None):
@@ -39,9 +43,6 @@ class ServeTest(unittest.TestCase):
         )
         self.t.start()
         time.sleep(0.3)
-
-    def tearDown(self):
-        os.environ.pop("XSEARCH_COOKIE_PORT", None)
 
     def post(self, body, origin):
         req = urllib.request.Request(

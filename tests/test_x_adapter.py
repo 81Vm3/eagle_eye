@@ -141,21 +141,15 @@ class XChannelSearchTest(unittest.TestCase):
 
 
 class EnvAliasTest(unittest.TestCase):
+    # twscrape 账号库默认路径（旧库存在才沿用）见 tests/test_paths.py MiscTest.test_twscrape_db_default
     def test_eagle_alias_wins_and_xsearch_still_works(self):
         from eagle_eye.channels.x import cookie_server, tws
-        with mock.patch.dict(os.environ, {"XSEARCH_TWS_DB": "/tmp/a.db", "XSEARCH_COOKIE_PORT": "1234"}, clear=False):
-            os.environ.pop("EAGLE_X_TWS_DB", None)
+        clean = {k: v for k, v in os.environ.items() if not k.startswith(("EAGLE_", "XSEARCH_"))}
+        with mock.patch.dict(os.environ, {**clean, "XSEARCH_TWS_DB": "/tmp/a.db", "XSEARCH_COOKIE_PORT": "1234"}, clear=True):
             self.assertEqual(str(tws.db_path()), "/tmp/a.db")
             self.assertEqual(cookie_server.port(), 1234)
             with mock.patch.dict(os.environ, {"EAGLE_X_TWS_DB": "/tmp/b.db"}):
                 self.assertEqual(str(tws.db_path()), "/tmp/b.db")
-
-    def test_default_db_path_unchanged(self):
-        from eagle_eye.channels.x import tws
-        env = {k: v for k, v in os.environ.items() if k not in ("XSEARCH_TWS_DB", "EAGLE_X_TWS_DB")}
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertEqual(tws.db_path(), tws.Path.home() / ".config" / "xsearch" / "twscrape.db")
-
 
 if __name__ == "__main__":
     unittest.main()

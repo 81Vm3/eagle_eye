@@ -115,20 +115,36 @@ class MiscTest(unittest.TestCase):
         self.assertEqual(paths.runs_dir(), ROOT / "runs")
 
     def test_twscrape_db_default(self):
+        # LEGACY_DB 在 import 时按 Path.home() 算出；这里只校验公式，行为用临时 HOME 测，不依赖用户真实旧库是否存在
+        self.assertEqual(tws.LEGACY_DB, Path.home() / ".config" / "xsearch" / "twscrape.db")
         with tempfile.TemporaryDirectory() as d:
-            legacy = Path(d) / "legacy.db"
-            env = {"EAGLE_HOME": str(Path(d) / "home")}
-            with mock.patch.dict(os.environ, env, clear=True):
-                self.assertEqual(tws.default_db(legacy), Path(d) / "home" / "x" / "twscrape.db")
+            home = Path(d)
+            legacy = home / ".config" / "xsearch" / "twscrape.db"
+            clean = {k: v for k, v in os.environ.items()
+                     if not k.startswith(("EAGLE_", "XSEARCH_")) and k not in ("XDG_CONFIG_HOME", "APPDATA")}
+            with mock.patch.dict(os.environ, {**clean, "HOME": d}, clear=True), \
+                    mock.patch.object(tws, "LEGACY_DB", legacy):
+                # 旧路径不存在 → EAGLE_HOME/x/twscrape.db（EAGLE_HOME 按平台默认，落在临时 HOME 下）
+                new = tws.db_path()
+                self.assertEqual(new, paths.eagle_home() / "x" / "twscrape.db")
+                self.assertTrue(new.is_relative_to(home), new)
+                with mock.patch.dict(os.environ, {"EAGLE_HOME": str(home / "eh")}):
+                    self.assertEqual(tws.db_path(), home / "eh" / "x" / "twscrape.db")
+                # 旧路径存在 → 沿用旧路径（即使设置了 EAGLE_HOME）
+                legacy.parent.mkdir(parents=True)
                 legacy.write_text("")
-                self.assertEqual(tws.default_db(legacy), legacy)
-            with mock.patch.dict(os.environ, {**env, "XSEARCH_TWS_DB": "/a.db"}, clear=True):
-                self.assertEqual(tws.db_path(), Path("/a.db"))
-            with mock.patch.dict(os.environ, {**env, "XSEARCH_TWS_DB": "/a.db", "EAGLE_X_TWS_DB": "/b.db"}, clear=True):
-                self.assertEqual(tws.db_path(), Path("/b.db"))
+                self.assertEqual(tws.db_path(), legacy)
+                with mock.patch.dict(os.environ, {"EAGLE_HOME": str(home / "eh")}):
+                    self.assertEqual(tws.db_path(), legacy)
+                # 环境变量优先，EAGLE_X_ 优先于 XSEARCH_
+                with mock.patch.dict(os.environ, {"XSEARCH_TWS_DB": "/a.db"}):
+                    self.assertEqual(tws.db_path(), Path("/a.db"))
+                    with mock.patch.dict(os.environ, {"EAGLE_X_TWS_DB": "/b.db"}):
+                        self.assertEqual(tws.db_path(), Path("/b.db"))
 
     def test_user_topics_dir(self):
-        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"EAGLE_HOME": d}):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"EAGLE_HOME": d}), \
+                mock.patch.object(topics, "TOPICS_DIR", Path(d) / "bundled"):
             tdir = Path(d) / "x" / "topics"
             tdir.mkdir(parents=True)
             (tdir / "mine.toml").write_text('queries = ["a"]\ndescription = "d"\n')

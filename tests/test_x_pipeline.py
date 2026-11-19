@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -106,9 +107,11 @@ class TopicsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
-        patcher = mock.patch.object(topics, "TOPICS_DIR", self.dir)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # 包内主题目录和 EAGLE_HOME 下的用户主题目录都换成临时目录（不读真实 $EAGLE_HOME/x/topics）
+        for patcher in (mock.patch.object(topics, "TOPICS_DIR", self.dir),
+                        mock.patch.dict(os.environ, {"EAGLE_HOME": str(self.dir / "eagle_home")})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
 
     def test_topic_loads_with_defaults(self):
