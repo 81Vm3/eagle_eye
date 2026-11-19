@@ -8,7 +8,7 @@
 ## 分层
 
 ```
-Agent ──(Skill 指引)──► bin/eagle  (eagle_eye/cli.py)
+Agent ──(Skill 指引: skills/eagle-search)──► bin/eagle  (eagle_eye/cli.py)
                            │
                  ┌─────────┴──────────┐
         eagle channels / search     eagle <渠道> ...（原生子命令：x → channels/x/cli.py；xhs → native_command 透传）
@@ -32,13 +32,15 @@ Agent ──(Skill 指引)──► bin/eagle  (eagle_eye/cli.py)
 - **Python 核心 + 多语言渠道**：核心只用标准库；外部渠道走 JSON-over-stdio（`docs/channel-protocol.md`），
   进程隔离意味着渠道崩溃、卡死、依赖缺失都只影响它自己（超时杀进程组、坏 JSON → internal 并附 stderr 尾部）。
 - **统一 CLI + Skill，暂不做 MCP**：CLI 对任何 Agent / 人 / cron 都可用；以后要做 MCP 只需在 core 之上加一层。
+  Skill 源文件放仓库根 `skills/`（不放在 `.claude/` 下，避免在本仓库里被自动加载），由用户按需安装到自己的 Agent。
 - **错误即数据**：7 个错误码直接告诉 Agent 下一步（登录 / 等待 / 换渠道 / 修参数），多渠道时汇总在 `errors` 里，
   单渠道失败不影响整体；全部失败才 exit 1。
 - **合并策略**：`relevance` 时各渠道相关度不可比，按渠道顺序轮流交错；`time` / `score` 全局排序，缺值排最后。
   去重键是归一化 URL（忽略协议、www、twitter.com→x.com、结尾斜杠、fragment、`xsec_token`/`utm_*` 等易变参数）加 (渠道, id)。
 - **私有参数**：`--opt k=v` 给所有渠道，`--opt <渠道>.k=v` 只给该渠道；渠道忽略未知键并在 `meta.ignored` 说明。
 - **兼容**：X 渠道沿用 `~/.config/xsearch/twscrape.db` 和 `XSEARCH_*` 环境变量（`EAGLE_X_*` 优先），
-  cookie 接收服务协议不变，已装的浏览器扩展继续可用。
+  cookie 接收服务协议不变，已装的浏览器扩展继续可用（扩展源码在 `extensions/x-cookie/`，manifest 名与 /ping 的 app 名仍是 "xsearch"）。
+- **浏览器扩展放顶层 `extensions/`**：按 `<渠道>-<用途>` 命名，不进 Python 包；Windows 浏览器加载的是复制出去的副本，用 `make sync-extension` 同步。
 
 ## X 渠道的 Query 映射
 

@@ -3,7 +3,8 @@ name: eagle-search
 description: 用 eagle_eye 统一搜索 X (Twitter)、小红书等外部信息渠道：一次查询并发多渠道、合并去重；也能跑 X 预设主题、抓 X 长文。当用户想知道某话题在社交平台上最近在讨论什么、找某人/某话题的帖子、找资源/经验帖，或需要超出本地代码库的外部信息时使用。
 ---
 
-入口：`~/eagle_eye/bin/eagle`（任意目录可调用）。**stdout 只有结果，进度和错误在 stderr**。工程细节见 `~/eagle_eye/AGENTS.md`。
+入口：`<仓库路径>/bin/eagle`（任意目录可调用）。下文示例假定仓库在 `~/eagle_eye`；仓库放在别处时，把示例里的 `~/eagle_eye` 换成实际路径。
+**stdout 只有结果，进度和错误在 stderr**。工程细节见 `<仓库路径>/AGENTS.md`。
 
 ## 1. 先看有哪些渠道
 

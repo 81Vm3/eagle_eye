@@ -19,4 +19,4 @@ build-backend = "setuptools.build_meta"
 include = ["eagle_eye*"]
 
 [tool.setuptools.package-data]
-"eagle_eye.channels.x" = ["topics/*.toml", "chrome-extension/*"]
+"eagle_eye.channels.x" = ["topics/*.toml"]

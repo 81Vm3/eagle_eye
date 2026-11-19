@@ -1,7 +1,8 @@
 # AGENTS.md — eagle_eye 工程约定
 
 eagle_eye 是给 Agent 用的**统一搜索/信息中间层**：核心（Python）只认识 `Query → Item`，X、小红书等都只是渠道。
-Agent 通过统一 CLI（`bin/eagle`）+ Skill（`.claude/skills/eagle-search/`）接入；暂不做 MCP。
+Agent 通过统一 CLI（`bin/eagle`）+ Skill（`skills/eagle-search/`，由用户自行安装，见 README「安装 Skill」）接入；暂不做 MCP。
+**仓库内不建 `.claude/` 下的 Skill 目录**（否则在本仓库里会被 Claude Code 自动加载）；新增/修改 Skill 只改 `skills/` 下的文件。
 
 渠道契约：[`docs/channel-protocol.md`](docs/channel-protocol.md)（含 eagle.toml 登记键；**改契约前先和 Commander 确认**，外部渠道在并行按它实现）。
 架构说明：[`docs/architecture.md`](docs/architecture.md)。
@@ -30,11 +31,14 @@ eagle_eye/
       cli.py                  原生子命令 eagle x search|run|topics|article|login
       settings.py             环境变量：EAGLE_X_* 优先，兼容 XSEARCH_*
       topics/*.toml           X 预设主题（仓库不自带，格式见 README「X 预设主题」）
-      chrome-extension/       cookie 同步扩展（MV3）。接收服务 /ping 的 app 名保持 "xsearch"，已装扩展无需更新
+extensions/                   各渠道配套的浏览器扩展，按 <渠道>-<用途> 命名
+  x-cookie/                   X cookie 同步扩展（MV3）。manifest 名称和接收服务 /ping 的 app 名保持 "xsearch"（已装扩展靠它识别）；
+                              改动后 make sync-extension 复制到 Windows 副本（EXT_DEST），再在 Edge 扩展页点「重新加载」
 backends/xhs/                 小红书 Go 后端（ee-xhs 维护，实现协议的 channel describe/search）
 tests/                        unittest，不访问网络；tests/fixtures/fake_channel.py 是假外部渠道
 runs/                         eagle x run 的输出（runs/x/<主题>/<时间>/，不入库）
 docs/                         协议、架构；docs/reports/ 为临时报告（不入库）
+skills/eagle-search/SKILL.md  Agent Skill 源文件（用户自行安装，仓库内不建 .claude/ 下的 Skill 目录）
 ```
 
 ## 约定
@@ -94,7 +98,7 @@ title / description / cost_hint      # 可选：二进制不可用时 eagle chan
 5. 可选：`status()`（不联网判断可用性，供 `eagle channels`）、`native(argv)`（`eagle <name> ...` 原生子命令）。
 6. `eagle.toml` 加 `[channels.<name>] type = "python"  class = "eagle_eye.channels.<name>.adapter:XxxChannel"`（代价高的渠道加 `default = false`）。
 7. 测试 `tests/test_<name>_*.py`：用假客户端（注入 factory）覆盖映射、选项、错误码，不访问网络。
-8. 更新 `.claude/skills/eagle-search/SKILL.md` 的渠道表（代价、语法、错误）和 README。
+8. 更新 `skills/eagle-search/SKILL.md` 的渠道表（代价、语法、错误）和 README。
 
 ### B. 外部渠道（任意语言）
 
@@ -103,4 +107,4 @@ title / description / cost_hint      # 可选：二进制不可用时 eagle chan
 3. `eagle.toml` 加 `[channels.<name>] type = "external"`、`command`、`cwd`、`timeout_seconds`、`native_command`（若有原生命令）、兜底的 `title/description/cost_hint`；慢 / 配额少 / 有封号风险的渠道设 `default = false`。**不用写 Python。**
 4. 验证：`bin/eagle channels` 显示可用；二进制删掉时显示 `unavailable` 而不崩；`bin/eagle search -c <name> ... --format json` 走通；错误码按协议返回。
 5. 若需要协议没有的能力，先找 Commander 改协议，再两边一起实现。
-6. 更新 Skill 和 README。
+6. 更新 Skill（`skills/eagle-search/SKILL.md`）和 README。

@@ -1,4 +1,4 @@
-"""本地 cookie 接收服务：配合 chrome-extension/ 把浏览器里 x.com 的登录 cookie 导入 twscrape 账号库。
+"""本地 cookie 接收服务：配合 extensions/x-cookie/ 扩展把浏览器里 x.com 的登录 cookie 导入 twscrape 账号库。
 
 只监听 127.0.0.1，只接受浏览器扩展（chrome-extension:// / extension://）的请求（网页无法伪造 Origin），
 cookie 只写进账号库，不打印、不落其他文件。
@@ -109,7 +109,7 @@ def serve(timeout=300, keep=False, log=print, save=save_account):
     srv = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(on_saved, save, wanted=lambda: not saved))
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
-    log(f"等待 Chrome 扩展推送 cookie（http://127.0.0.1:{port()}）…")
+    log(f"等待浏览器扩展 extensions/x-cookie/ 推送 cookie（http://127.0.0.1:{port()}）…")
     log("扩展会在 30 秒内自动推送；也可以点扩展图标里的「立即同步」。")
     try:
         done.wait(None if keep else timeout)

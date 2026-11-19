@@ -135,7 +135,7 @@ def cmd_login(args):
         except OSError as e:
             raise RuntimeError(f"端口 {cookie_server.port()} 启动失败: {e}") from e
         if not saved:
-            raise RuntimeError("超时没收到 cookie：确认扩展已安装、已登录 x.com，再点扩展里的「立即同步」")
+            raise RuntimeError("超时没收到 cookie：确认已加载 extensions/x-cookie/ 扩展、已登录 x.com，再点扩展里的「立即同步」")
         return
     exe = shutil.which("twscrape", path=str(Path(sys.executable).parent)) or shutil.which("twscrape")
     if not exe:

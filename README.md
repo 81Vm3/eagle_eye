@@ -12,7 +12,9 @@ make venv     # 用 uv 建 .venv 并装 twscrape（X 渠道默认后端）
 make build    # 构建小红书渠道 → bin/eagle-xhs（Go 1.26；不在 PATH 时自动用 /usr/local/go/bin/go。不构建时小红书渠道显示「不可用」，不影响 X）
 ```
 
-- **X**：在 Edge/Chrome 加载 `eagle_eye/channels/x/chrome-extension/`，登录 x.com，运行 `bin/eagle x login`，扩展会自动推送 cookie。
+- **X**：在 Edge/Chrome 加载 cookie 同步扩展 `extensions/x-cookie/`，登录 x.com，运行 `bin/eagle x login`，扩展会自动推送 cookie。
+  Windows 上的浏览器不能直接加载 WSL 路径，本机加载的是副本 `C:\Users\p3g4s\xsearch-cookie-extension\`（WSL 里是 `/mnt/c/Users/p3g4s/xsearch-cookie-extension/`）。
+  **改了扩展后需同步复制**：`make sync-extension`（目标目录可用 `EXT_DEST=...` 覆盖），再到 Edge 扩展页（`edge://extensions`）点该扩展的「重新加载」。
   已经用过 `x_resource_search` 的不用重新登录（账号库仍是 `~/.config/xsearch/twscrape.db`，`XSEARCH_*` 环境变量继续有效，也可用 `EAGLE_X_*`）。
   也可以改用付费的 twitterapi.io：`export TWITTERAPI_IO_KEY=...`。
 - **小红书**：`cp backends/xhs/config.example.yaml backends/xhs/config.yaml`，再 `bin/eagle xhs login` 扫码登录。渠道搜索只接管 `browser.cdp_url` 指向的 Chrome（新开一个标签页工作），没配 `cdp_url` 时报「不可用」。详见 `backends/xhs/README.md`。
@@ -77,9 +79,27 @@ bin/eagle xhs login                     # 小红书扫码登录，原样透传�
 
 小红书参数：`--opt detail=N`（0–10，默认 3，打开前 N 篇读正文）；`--hours` 有效（发布时间由笔记 ID 推算）；`--sort time|score` 是在综合排序结果内本地重排。`cooldown` / `auth_required` 不要自动重试，后者需人工 `bin/eagle xhs login`。
 
+## 安装 Skill
+
+Skill 源文件在仓库根的 `skills/eagle-search/SKILL.md`。仓库内**不建** `.claude/` 下的 Skill 目录，所以 clone 下来不会自动生效，需要你自行安装到要用它的 Agent。
+
+Claude Code（任选其一）：
+
+```bash
+# 用户级：所有项目都能用（软链接，仓库更新后 Skill 自动跟着更新）
+ln -s <仓库绝对路径>/skills/eagle-search ~/.claude/skills/eagle-search
+
+# 项目级：只在某个项目里用
+mkdir -p <某项目>/.claude/skills && cp -r <仓库绝对路径>/skills/eagle-search <某项目>/.claude/skills/
+```
+
+其他支持 SKILL.md 的 Agent，按各自的方式安装 `skills/eagle-search/` 目录即可。
+
+SKILL.md 的入口是 `<仓库路径>/bin/eagle`，示例命令假定仓库在 `~/eagle_eye`。仓库放在别处时，把 SKILL.md 里的 `~/eagle_eye` 换成实际路径（用软链接安装时直接改仓库里的文件会影响 git 状态，可改用拷贝后再改）。
+
 ## 给 Agent
 
-Claude Code 的 Skill 在 `.claude/skills/eagle-search/SKILL.md`。工程约定、目录和新增渠道步骤见 [AGENTS.md](AGENTS.md)，
+Skill 见上一节「安装 Skill」（源文件 `skills/eagle-search/SKILL.md`）。工程约定、目录和新增渠道步骤见 [AGENTS.md](AGENTS.md)，
 架构见 [docs/architecture.md](docs/architecture.md)，渠道协议见 [docs/channel-protocol.md](docs/channel-protocol.md)。
 
 ## 开发
@@ -87,6 +107,7 @@ Claude Code 的 Skill 在 `.claude/skills/eagle-search/SKILL.md`。工程约定�
 ```bash
 make test        # Python 单测 + Go 单测（都不访问网络）
 make test-py     # = python3 -m unittest discover -s tests -t .
+make sync-extension   # 把 extensions/x-cookie/ 复制到 Windows 副本（EXT_DEST，默认 /mnt/c/Users/p3g4s/xsearch-cookie-extension）
 ```
 
 测试和 CI 里**绝不要跑真实的小红书渠道搜索**（有封号风险）：用 `tests/fixtures/fake_channel.py` 模拟外部渠道，或只测 describe / bad_query / 占住 browser.lock 时的 busy。

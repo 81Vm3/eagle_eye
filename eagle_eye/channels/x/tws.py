@@ -4,7 +4,7 @@
 所以 pipeline、raw.json、--from-raw 都不用改。
 
 账号登记（一次性，cookie 至少含 auth_token 和 ct0，建议用小号）：
-    bin/eagle x login            # 配合 chrome-extension/ 自动导入
+    bin/eagle x login            # 配合 extensions/x-cookie/ 浏览器扩展自动导入
     bin/eagle x login --manual 名字   # 手动粘贴
 """
 
@@ -86,7 +86,7 @@ class TwscrapeClient:
             raise XError("未安装 twscrape：make venv（或 uv pip install --python .venv/bin/python twscrape）", "unavailable") from e
         db = Path(db or db_path())
         if not db.exists():
-            raise XError(f"twscrape 账号库不存在: {db}，需要人工运行 bin/eagle x login（配合 chrome-extension/ 自动导入）", "auth_required")
+            raise XError(f"twscrape 账号库不存在: {db}，需要人工运行 bin/eagle x login（配合 extensions/x-cookie/ 浏览器扩展自动导入）", "auth_required")
         if interval is None:
             interval = float(env("TWS_INTERVAL", "2"))
         if wait_timeout is None:
