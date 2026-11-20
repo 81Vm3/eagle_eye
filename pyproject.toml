@@ -1,7 +1,7 @@
 [project]
 name = "eagle-eye"
 # 与 eagle_eye/__init__.py 的 __version__、Release tag vX.Y.Z 保持一致（eagle setup 按它下载 eagle-xhs；tests/test_paths.py 校验）
-version = "0.1.0"
+version = "0.2.0"
 description = "给 Agent 用的统一搜索/信息中间层：X、小红书等只是渠道"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -2,6 +2,23 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-11-20
+
+### 新增
+
+- **Reddit 渠道**：全站关键词走 Tavily Search API，指定 `subreddit` / `author` 时优先走免费的 Arctic Shift，Tavily 结果用 Arctic Shift 补全作者、分数、评论数、时间和正文；结果本地缓存（默认 24 小时，降级结果 1 小时并标记 `meta.degraded`）。默认不参与搜索，需显式 `-c reddit`。
+  - Tavily key：环境变量 `EAGLE_REDDIT_TAVILY_API_KEY` 或 `$EAGLE_HOME/reddit/config.toml` 的 `api_key`；没有 key 时只能用 `subreddit` / `author` 查询。
+  - 自己维护 `$EAGLE_HOME/eagle.toml` 的用户需手动添加 `[channels.reddit]` 登记（见包内默认配置）。
+- **`make install` / `make uninstall`**：不发版直接把当前源码装成本机的 `eagle`，并用本机 Go 构建 `eagle-xhs` 到 `EAGLE_HOME`。
+
+### 修复
+
+- Reddit：请求带显式 User-Agent（Arctic Shift 会拒绝默认的 Python-urllib UA）；Arctic Shift 返回 403 时报 `unavailable`，不再误报 key 错误；限速头 Reset-At 支持毫秒时间戳。
+
+### 文档
+
+- README 补充 Linux 快速开始与 WSL 说明。
+
 ## [0.1.0] - 2026-11-19
 
 首个版本。
