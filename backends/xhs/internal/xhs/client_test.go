@@ -46,7 +46,7 @@ func TestBlockedURL(t *testing.T) {
 // fakeClient 不碰浏览器：eval 按调用次数返回预设结果，地址固定为 curURL。
 func fakeClient(curURL *string, eval func(n int, js string) string) (*Client, *int32) {
 	var calls int32
-	c := &Client{interval: time.Millisecond, searchTimeout: 200 * time.Millisecond,
+	c := &Client{interval: time.Millisecond, loginInterval: time.Millisecond, searchTimeout: 200 * time.Millisecond,
 		moreTimeout: 50 * time.Millisecond, noteTimeout: 200 * time.Millisecond}
 	c.evalFn = func(_ context.Context, js string) (string, error) {
 		n := int(atomic.AddInt32(&calls, 1))
@@ -262,5 +262,44 @@ func TestPoll(t *testing.T) {
 	cancel()
 	if err := Poll(ctx, time.Second, time.Millisecond, func() (bool, error) { return false, nil }); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+// login 时首页被重定向到安全验证页：不退出，提示一次（onVerify），等用户完成验证并登录后成功返回。
+func TestWaitForLoginWaitsThroughVerification(t *testing.T) {
+	cur := ""
+	c, _ := fakeClient(&cur, func(int, string) string { return "1" }) // 一离开验证页就是已登录
+	c.gotoFn = func(context.Context, string) error {
+		cur = "https://www.xiaohongshu.com/website-login/captcha?redirectPath=x"
+		return nil
+	}
+	checks := 0
+	c.urlFn = func(context.Context) string {
+		checks++
+		if checks > 4 { // 用户完成验证后跳回首页
+			cur = "https://www.xiaohongshu.com/explore"
+		}
+		return cur
+	}
+	prompts := 0
+	if err := c.WaitForLogin(context.Background(), time.Second, func() { prompts++ }); err != nil {
+		t.Fatalf("WaitForLogin = %v, want nil", err)
+	}
+	if prompts != 1 {
+		t.Fatalf("onVerify 调用 %d 次, want 1", prompts)
+	}
+}
+
+// 验证一直没完成：超时报错并说明卡在安全验证，而不是笼统的超时。
+func TestWaitForLoginVerificationTimeout(t *testing.T) {
+	cur := ""
+	c, _ := fakeClient(&cur, func(int, string) string { return "1" })
+	c.gotoFn = func(context.Context, string) error {
+		cur = "https://www.xiaohongshu.com/website-login/captcha"
+		return nil
+	}
+	err := c.WaitForLogin(context.Background(), 20*time.Millisecond, nil)
+	if err == nil || !strings.Contains(err.Error(), "安全验证") {
+		t.Fatalf("WaitForLogin = %v, want 安全验证超时", err)
 	}
 }

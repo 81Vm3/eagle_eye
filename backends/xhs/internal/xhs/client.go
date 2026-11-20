@@ -46,16 +46,17 @@ type Client struct {
 	page *rod.Page
 
 	// 以下可注入（测试用假实现，不碰浏览器）
-	evalFn   func(ctx context.Context, js string) (string, error) // 在页面里执行 JS，返回字符串结果
-	urlFn    func(ctx context.Context) string                     // 当前主框架地址
-	gotoFn   func(ctx context.Context, u string) error            // 导航
-	interval time.Duration                                        // 轮询间隔
+	evalFn        func(ctx context.Context, js string) (string, error) // 在页面里执行 JS，返回字符串结果
+	urlFn         func(ctx context.Context) string                     // 当前主框架地址
+	gotoFn        func(ctx context.Context, u string) error            // 导航
+	interval      time.Duration                                        // 轮询间隔
+	loginInterval time.Duration                                        // WaitForLogin 的轮询间隔（等人操作，默认 3 秒）
 
 	searchTimeout, moreTimeout, noteTimeout time.Duration
 }
 
 func NewClient(page *rod.Page) *Client {
-	c := &Client{page: page, interval: pollInterval,
+	c := &Client{page: page, interval: pollInterval, loginInterval: 3 * time.Second,
 		searchTimeout: searchReadyTimeout, moreTimeout: moreCardsTimeout, noteTimeout: noteReadyTimeout}
 	c.evalFn = c.pageEval
 	c.urlFn = c.pageURL
@@ -187,12 +188,25 @@ func jsString(s string) string {
 }
 
 // WaitForLogin 打开首页，等待用户在浏览器里手动扫码登录（login 子命令用；等人操作，3 秒查一次）。
-func (c *Client) WaitForLogin(ctx context.Context, timeout time.Duration) error {
-	if err := c.navigate(ctx, homeURL); err != nil && !errors.Is(err, ErrLoginRequired) {
+// login 窗口有界面、由人操作：遇到安全验证页（风控）不退出，而是调用 onVerify（每次进入验证页调一次）提示用户
+// 在窗口里完成验证，然后继续等待登录。onVerify 可为 nil。
+func (c *Client) WaitForLogin(ctx context.Context, timeout time.Duration, onVerify func()) error {
+	if err := c.navigate(ctx, homeURL); err != nil && !errors.Is(err, ErrLoginRequired) && !errors.Is(err, ErrVerification) {
 		return err
 	}
-	err := Poll(ctx, timeout, 3*time.Second, func() (bool, error) { return c.loggedInNow(ctx), nil })
+	inVerify := false
+	err := Poll(ctx, timeout, c.loginInterval, func() (bool, error) {
+		verifying := errors.Is(c.CheckBlocked(ctx), ErrVerification)
+		if verifying && !inVerify && onVerify != nil {
+			onVerify()
+		}
+		inVerify = verifying
+		return !verifying && c.loggedInNow(ctx), nil
+	})
 	if errors.Is(err, context.DeadlineExceeded) {
+		if inVerify {
+			return fmt.Errorf("等待登录超时：安全验证尚未完成")
+		}
 		return fmt.Errorf("等待登录超时")
 	}
 	return err

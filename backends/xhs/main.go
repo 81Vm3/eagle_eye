@@ -214,7 +214,10 @@ func runLogin(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	defer sess.Close()
 	c := xhs.NewClient(sess.Page)
 	log.Info("请在弹出的浏览器窗口中扫码登录小红书（最多等待 5 分钟）…")
-	if err := c.WaitForLogin(ctx, 5*time.Minute); err != nil {
+	onVerify := func() {
+		log.Warn("小红书弹出了安全验证（风控），请在浏览器窗口里完成验证；完成后继续扫码登录，程序会一直等待")
+	}
+	if err := c.WaitForLogin(ctx, 5*time.Minute, onVerify); err != nil {
 		return err
 	}
 	if cfg.Browser.Headless {
