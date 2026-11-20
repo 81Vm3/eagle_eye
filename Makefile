@@ -2,6 +2,8 @@
 #   make venv    用 uv 建 .venv 并装 twscrape（X 渠道 twscrape 后端）
 #   make build   构建小红书外部渠道 → bin/eagle-xhs（委托 backends/xhs/Makefile）
 #   make test    Python 单测 + Go 单测（均不访问网络）
+#   make install 从当前源码安装 eagle 到 PATH（uv tool）并本地构建 eagle-xhs 到 EAGLE_HOME，不用发版
+#   make uninstall  卸载 uv tool 装的 eagle（不动 EAGLE_HOME 里的数据）
 #   make test-ci 本地复现 CI 的 Python 单测：干净副本 + 新 venv + 空 HOME + env -i，PATH 无/有假 Chrome 等各跑一遍
 #   make sync-extension EXT_DEST=<目录>  把 X cookie 扩展复制到浏览器实际加载的目录（= bin/eagle x extension --copy-to）
 
@@ -19,7 +21,7 @@ CI_PYTHON ?= 3.11
 CI_FAKE_TOOLS ?= google-chrome google-chrome-stable chromium chromium-browser microsoft-edge go git uv xdg-open open claude twscrape
 
 .DEFAULT_GOAL := help
-.PHONY: help venv build test test-py test-go test-ci sync-extension clean
+.PHONY: help venv build install uninstall test test-py test-go test-ci sync-extension clean
 
 help: ## 显示帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -30,6 +32,17 @@ venv: ## 创建 .venv 并安装 twscrape（开发模式；安装模式见 README
 
 build: ## 构建小红书渠道二进制 bin/eagle-xhs
 	$(GO_PATH_PREFIX)$(MAKE) -C backends/xhs build GO=$(GO)
+
+install: ## 从当前源码（含未提交改动）安装 eagle 到 PATH，并用本机 Go 构建 eagle-xhs 到 EAGLE_HOME/bin（无 Go 时跳过）
+	$(UV) tool install --force --reinstall-package eagle-eye .
+	@if command -v "$(GO)" >/dev/null 2>&1; then \
+		env -u EAGLE_CONFIG GO="$(GO)" PYTHONPATH="$(CURDIR)" $(PY) -m eagle_eye setup --from-source; \
+	else \
+		echo "install: 找不到 Go，跳过本地构建 eagle-xhs（可 make install GO=/path/to/go，或运行 eagle setup 下载 Release 版）" >&2; \
+	fi
+
+uninstall: ## 卸载 uv tool 装的 eagle（保留 EAGLE_HOME 里的配置和数据）
+	$(UV) tool uninstall eagle-eye
 
 test: test-py test-go ## 全部测试
 

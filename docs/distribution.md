@@ -104,4 +104,5 @@ native_command = ["{home}/bin/eagle-xhs{exe}"]
 - 仓库里的 `bin/eagle` 在未设置 `EAGLE_CONFIG` 时把它设为仓库根 `eagle.toml`：小红书仍用仓库 `bin/eagle-xhs`、`backends/xhs/config.yaml`、`backends/xhs/data/`，
   不读 EAGLE_HOME 里的二进制和配置。
 - 源码仓库运行时（`eagle_eye/` 的上级目录有 `pyproject.toml` 和 `eagle.toml`）`eagle x run` 输出仍在仓库 `runs/`。
+- `make install`：不发版，从当前源码（含未提交改动）`uv tool install --force` 成安装模式的 `eagle`，再 `eagle setup --from-source` 用本机 Go 构建 `$EAGLE_HOME/bin/eagle-xhs`（版本号取包版本；找不到 Go 时跳过）。改了代码重新 `make install` 即可。
 - `make build` 构建 `bin/eagle-xhs`；`make test` 跑 Python + Go 单测；CI（`.github/workflows/ci.yml`）在 ubuntu-latest 和 macos-latest 上跑同样的测试并检查 wheel 内容。

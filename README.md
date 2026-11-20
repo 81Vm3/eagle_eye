@@ -234,6 +234,7 @@ eagle skill show >> AGENTS.md        # 打印 Skill 正文；也可以粘贴到�
 ```bash
 make venv        # 用 uv 建 .venv 并装 twscrape（bin/eagle 优先用 .venv 的 python）
 make build       # 构建小红书渠道 → bin/eagle-xhs（Go 版本见 backends/xhs/go.mod；不在 PATH 时可 make GO=/path/to/go）
+make install     # 不发版直接把当前源码装成本机的 eagle（uv tool install --force .），并用本机 Go 构建 eagle-xhs 到 EAGLE_HOME；make uninstall 卸载
 cp backends/xhs/config.example.yaml backends/xhs/config.yaml   # 开发模式的小红书配置，再 bin/eagle xhs login
 make test        # Python 单测 + Go 单测（都不访问网络）
 make test-py     # = python3 -m unittest discover -s tests -t .
